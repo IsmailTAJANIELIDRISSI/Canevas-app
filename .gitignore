@@ -1,0 +1,27 @@
+# Node modules (applies to both tyaybi_front and tyaybi_back)
+node_modules/
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Backend — generated / temporary files
+tyaybi_back/uploads/*
+!tyaybi_back/uploads/.gitkeep
+tyaybi_back/*.pdf
+tyaybi_back/temp.*
+
+# Data / Excel files at repo root (not source code)
+/*.xlsx
+/*.xls
+
+# OS / editor
+.DS_Store
+Thumbs.db
