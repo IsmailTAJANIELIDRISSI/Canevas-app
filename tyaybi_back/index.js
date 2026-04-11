@@ -64,7 +64,7 @@ app.post('/upload', upload.single('excelFile'), async (req, res) => {
       console.error('Error converting Excel to PDF:', error.message); // Log the error message
       res.status(500).send(`Error converting Excel to PDF: ${error.message}`);
     }
-  });
+  });0
 
 // CRUD operations on JSON data
 app.get('/data', (req, res) => {
@@ -296,66 +296,6 @@ app.post('/uploadJsonData', upload.single('excelFile'), async (req, res) => {
         res.status(500).send(`Error processing Excel file: ${error.message}`);
     }
 });
-// LTA PARTAGE scan endpoint
-app.post('/lta/scan', (req, res) => {
-    const { partagePath, refs } = req.body;
-    if (!partagePath || !refs || !Array.isArray(refs)) {
-        return res.status(400).json({ error: 'partagePath and refs[] are required' });
-    }
-
-    const results = [];
-
-    for (const ref of refs) {
-        const trimmedRef = ref.trim();
-        if (!trimmedRef) continue;
-
-        // Search for folder matching "MAWB {ref}" (case-insensitive, ignoring spaces)
-        let folderPath = null;
-        try {
-            const entries = fs.readdirSync(partagePath, { withFileTypes: true });
-            const targetKey = `mawb${trimmedRef.toLowerCase().replace(/\s+/g, '')}`;
-            const match = entries.find(
-                e => e.isDirectory() && e.name.toLowerCase().replace(/\s+/g, '') === targetKey
-            );
-            if (match) folderPath = path.join(partagePath, match.name);
-        } catch (e) {
-            results.push({ ref: trimmedRef, found: false, error: 'Cannot read PARTAGE folder: ' + e.message });
-            continue;
-        }
-
-        if (!folderPath) {
-            results.push({ ref: trimmedRef, found: false });
-            continue;
-        }
-
-        try {
-            const files = fs.readdirSync(folderPath);
-            const xlsxFile = files.find(f => /\.(xlsx|xls)$/i.test(f));
-            const pdfFile = files.find(f => /\.pdf$/i.test(f));
-
-            const manifestB64 = xlsxFile
-                ? fs.readFileSync(path.join(folderPath, xlsxFile)).toString('base64')
-                : null;
-            const pdfB64 = pdfFile
-                ? fs.readFileSync(path.join(folderPath, pdfFile)).toString('base64')
-                : null;
-
-            results.push({
-                ref: trimmedRef,
-                found: true,
-                manifestB64,
-                manifestName: xlsxFile || null,
-                pdfB64,
-                pdfName: pdfFile || null,
-            });
-        } catch (e) {
-            results.push({ ref: trimmedRef, found: true, error: 'Error reading folder files: ' + e.message });
-        }
-    }
-
-    res.json({ results });
-});
-
 app.listen(PORT, () => {
     console.log(`App listening at http://localhost:${PORT}`);
 });
