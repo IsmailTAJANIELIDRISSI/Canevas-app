@@ -702,7 +702,7 @@ async function buildGeneratedExcelXL(sliceResult, ref) {
   return workbook.xlsx.writeBuffer();
 }
 
-async function sheetRowsToPdf(rows) {
+async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
   const { PDFDocument, rgb } = require("pdf-lib");
   const fk = require("@pdf-lib/fontkit");
   const pdfDoc = await PDFDocument.create();
@@ -712,53 +712,135 @@ async function sheetRowsToPdf(rows) {
   );
   const font = await pdfDoc.embedFont(fontBytes);
 
-  const pageWidth = 1200,
-    pageHeight = 800;
-  const fontSize = 6,
-    cellPad = 2;
-  const rowH = fontSize + 2 * cellPad,
-    headerH = 14;
-  const marginLeft = 10,
-    marginTop = 20;
-  const colWidths = (rows[0] || []).map((_, i) =>
-    i === 1 ? 160 : i === 2 ? 80 : 40,
+  // Match converter.js exactly (800×600, fontSize 2)
+  // smallerWidthColumns from converter.js (1-indexed) → 0-indexed:
+  // [1,2,3,4,8,9,10,11,12,13,14,15,16,17,18,20] → [0,1,2,3,7,8,9,10,11,12,13,14,15,16,17,19]
+  const smallerColsSet = new Set([
+    0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19,
+  ]);
+  const defaultCellWidth = 50;
+  const smallerCellWidth = 30;
+  const fontSize = 2;
+  const cellPadding = 2;
+  const tableTopPadding = 20;
+  const tableLeftPadding = 10;
+  const headerRowHeight = 20;
+  const dataRowHeight = fontSize + 2 * cellPadding;
+  const spaceBetweenTableAndTotals = 20;
+  const minimumSpaceForTotals = 30;
+  const pageWidth = 800,
+    pageHeight = 600;
+
+  // Drop the appended totals row (last row) and HAWB column (last col, index 21)
+  const dataRows = rows.slice(0, rows.length - 1).map((r) => r.slice(0, 21));
+  const colWidths = (dataRows[0] || []).map((_, i) =>
+    smallerColsSet.has(i) ? smallerCellWidth : defaultCellWidth,
   );
 
   let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - marginTop;
+  let y = pageHeight - tableTopPadding;
 
-  const drawRow = (rowData, isHeader) => {
-    let x = marginLeft;
-    const h = isHeader ? headerH : rowH;
-    if (y - h < marginTop) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      y = pageHeight - marginTop;
+  function truncate(text, maxWidth) {
+    let t = text;
+    while (
+      t.length > 0 &&
+      font.widthOfTextAtSize(t, fontSize) > maxWidth - 2 * cellPadding
+    ) {
+      t = t.slice(0, -1);
     }
-    rowData.forEach((cell, ci) => {
-      const w = colWidths[ci] ?? 40;
+    return t;
+  }
+
+  // Header row
+  const headerRow = dataRows[0] || [];
+  let xPos = tableLeftPadding;
+  headerRow.forEach((cell, ci) => {
+    const cellText = cell != null ? String(cell).trim() : "";
+    const cellWidth = colWidths[ci] ?? smallerCellWidth;
+    page.drawRectangle({
+      x: xPos,
+      y: y - headerRowHeight,
+      width: cellWidth,
+      height: headerRowHeight,
+      borderColor: rgb(0, 0, 0),
+      borderWidth: 0.5,
+    });
+    const truncated = truncate(cellText, cellWidth);
+    if (truncated) {
+      const tw = font.widthOfTextAtSize(truncated, fontSize);
+      page.drawText(truncated, {
+        x: xPos + (cellWidth - tw) / 2,
+        y: y - headerRowHeight + (headerRowHeight - fontSize) / 2,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    }
+    xPos += cellWidth;
+  });
+  y -= headerRowHeight;
+
+  // Data rows
+  for (let ri = 1; ri < dataRows.length; ri++) {
+    const row = dataRows[ri];
+    let maxH = 0;
+    let x = tableLeftPadding;
+    row.forEach((cell, ci) => {
+      const cellText = cell != null ? String(cell).trim() : "";
+      const cellWidth = colWidths[ci] ?? smallerCellWidth;
+      maxH = Math.max(maxH, dataRowHeight);
       page.drawRectangle({
         x,
-        y: y - h,
-        width: w,
-        height: h,
+        y: y - dataRowHeight,
+        width: cellWidth,
+        height: dataRowHeight,
         borderColor: rgb(0, 0, 0),
-        borderWidth: 0.4,
+        borderWidth: 0.5,
       });
-      const text = cell != null ? String(cell).trim().substring(0, 30) : "";
-      if (text)
-        page.drawText(text, {
-          x: x + cellPad,
-          y: y - h + cellPad,
-          size: isHeader ? 7 : fontSize,
+      const truncated = truncate(cellText, cellWidth);
+      if (truncated) {
+        page.drawText(truncated, {
+          x: x + cellPadding,
+          y: y - dataRowHeight + cellPadding,
+          size: fontSize,
           font,
           color: rgb(0, 0, 0),
         });
-      x += w;
+      }
+      x += cellWidth;
     });
-    y -= h;
-  };
+    y -= maxH;
+    if (y <= tableTopPadding) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - tableTopPadding;
+    }
+  }
 
-  rows.forEach((row, i) => drawRow(row, i === 0));
+  // Totals footer (same as converter.js)
+  if (y < tableTopPadding + minimumSpaceForTotals) {
+    page = pdfDoc.addPage([pageWidth, pageHeight]);
+    y = pageHeight - tableTopPadding;
+  }
+  y -= spaceBetweenTableAndTotals;
+  if (totalPrice != null) {
+    page.drawText(`Total Value DDP: ${totalPrice}`, {
+      x: tableLeftPadding,
+      y,
+      size: 4,
+      font,
+      color: rgb(0, 0, 0),
+    });
+  }
+  if (totalDDP != null) {
+    page.drawText(`Freight Included: ${totalDDP}`, {
+      x: tableLeftPadding,
+      y: y - fontSize - 5,
+      size: 4,
+      font,
+      color: rgb(0, 0, 0),
+    });
+  }
+
   return pdfDoc.save();
 }
 
@@ -833,7 +915,19 @@ app.post("/lta/generate-and-save", async (req, res) => {
 
       // pdf
       try {
-        const pdfBytes = await sheetRowsToPdf(sheet.data);
+        const sheetTotalPrice = parseFloat(sheet.totals.value).toFixed(2);
+        const sheetTotalDDP =
+          sliceResult.totalvaluee > 0
+            ? Math.round(
+                (sliceResult.parvaleur / sliceResult.totalvaluee) *
+                  sheet.totals.value,
+              )
+            : 0;
+        const pdfBytes = await sheetRowsToPdf(
+          sheet.data,
+          sheetTotalPrice,
+          sheetTotalDDP,
+        );
         write(`${sheet.name}.pdf`, Buffer.from(pdfBytes));
       } catch (e) {
         errors.push({ name: `${sheet.name}.pdf`, error: e.message });
@@ -891,76 +985,18 @@ app.post("/lta/save-results", (req, res) => {
 });
 
 // Convert a DUM sheet (rows[][]) to PDF and return base64
-// Body: { rows: any[][], sheetName: string }
+// Body: { rows: any[][], sheetName?: string, totalPrice?: string, totalDDP?: number }
 app.post("/lta/sheet-to-pdf", async (req, res) => {
-  const { rows, sheetName } = req.body;
+  const { rows, totalPrice, totalDDP } = req.body;
   if (!rows || !Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ error: "rows[] is required" });
   }
   try {
-    const { PDFDocument, rgb } = require("pdf-lib");
-    const fontkit = require("@pdf-lib/fontkit");
-
-    const pdfDoc = await PDFDocument.create();
-    pdfDoc.registerFontkit(fontkit);
-
-    const latinFontBytes = fs.readFileSync(
-      path.join(__dirname, "fonts", "NotoSans-Regular.ttf"),
+    const pdfBytes = await sheetRowsToPdf(
+      rows,
+      totalPrice ?? null,
+      totalDDP ?? null,
     );
-    const latinFont = await pdfDoc.embedFont(latinFontBytes);
-
-    const pageWidth = 1200;
-    const pageHeight = 800;
-    const fontSize = 6;
-    const cellPad = 2;
-    const rowH = fontSize + 2 * cellPad;
-    const headerH = 14;
-    const marginLeft = 10;
-    const marginTop = 20;
-
-    // Column widths: narrow for short cols, wider for description
-    const colWidths = rows[0].map((_, i) =>
-      i === 1 ? 160 : i === 2 ? 80 : 40,
-    );
-
-    let page = pdfDoc.addPage([pageWidth, pageHeight]);
-    let y = pageHeight - marginTop;
-
-    const drawRow = (rowData, isHeader) => {
-      let x = marginLeft;
-      const h = isHeader ? headerH : rowH;
-      if (y - h < marginTop) {
-        page = pdfDoc.addPage([pageWidth, pageHeight]);
-        y = pageHeight - marginTop;
-      }
-      rowData.forEach((cell, ci) => {
-        const w = colWidths[ci] ?? 40;
-        page.drawRectangle({
-          x,
-          y: y - h,
-          width: w,
-          height: h,
-          borderColor: rgb(0, 0, 0),
-          borderWidth: 0.4,
-        });
-        const text = cell != null ? String(cell).trim().substring(0, 30) : "";
-        if (text) {
-          page.drawText(text, {
-            x: x + cellPad,
-            y: y - h + cellPad,
-            size: isHeader ? 7 : fontSize,
-            font: latinFont,
-            color: rgb(0, 0, 0),
-          });
-        }
-        x += w;
-      });
-      y -= h;
-    };
-
-    rows.forEach((row, i) => drawRow(row, i === 0));
-
-    const pdfBytes = await pdfDoc.save();
     res.json({ pdfB64: Buffer.from(pdfBytes).toString("base64") });
   } catch (e) {
     res.status(500).json({ error: e.message });
