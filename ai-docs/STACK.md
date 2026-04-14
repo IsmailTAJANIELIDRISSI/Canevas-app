@@ -2,10 +2,10 @@
 
 ## Languages and Runtimes
 
-| Layer | Language | Runtime |
-|---|---|---|
-| Frontend | JavaScript (JSX) | Node.js 20+ (build only) |
-| Backend | JavaScript (CommonJS) | Node.js 20+ |
+| Layer    | Language              | Runtime                  |
+| -------- | --------------------- | ------------------------ |
+| Frontend | JavaScript (JSX)      | Node.js 20+ (build only) |
+| Backend  | JavaScript (CommonJS) | Node.js 20+              |
 
 No TypeScript. No type annotations in use (despite `@types/*` devDependencies in frontend).
 
@@ -13,55 +13,56 @@ No TypeScript. No type annotations in use (despite `@types/*` devDependencies in
 
 ## Frontend Stack (`tyaybi_front/`)
 
-| Technology | Version | Purpose |
-|---|---|---|
-| React | 18.2.0 | UI component framework |
-| Vite | 4.x | Build tool and dev server |
-| React Router DOM | 6.17.0 | Client-side routing |
-| Material Tailwind | 2.1.4 | UI component library (buttons, cards, dialogs, inputs) |
-| Tailwind CSS | 3.3.4 | Utility-first CSS |
-| Heroicons | 2.0.18 | SVG icon set (used in sidebar/navbar) |
-| XLSX (SheetJS) | 0.18.5 | Client-side Excel parsing (read raw manifest files) |
-| ExcelJS | 4.4.0 | Client-side Excel generation (write formatted output files with styles/borders) |
-| jsPDF | 2.5.1 | Client-side PDF generation (customs declaration forms) |
-| jsPDF-autotable | 3.8.2 | Table rendering plugin for jsPDF |
-| @react-pdf/renderer | 3.4.4 | Alternative React-based PDF rendering (imported but usage unclear) |
-| pdf-lib | — (backend) | Used in backend converter.js only |
-| pdfjs-dist | 4.8.69 | Client-side PDF reading/parsing (to extract info from uploaded PDFs) |
-| mammoth | 1.8.0 | Client-side Word (.docx) file parsing (to extract customs info) |
-| axios | 1.7.2 | HTTP client for API calls to local backends |
-| file-saver | 2.0.5 | `saveAs()` to trigger browser downloads of generated files |
-| string-similarity | 4.0.4 | Fuzzy string matching for NGP code lookup when exact match fails |
-| moment | 2.30.1 | Date formatting/manipulation |
-| sweetalert | 2.1.2 | Confirmation and alert dialogs (`swal()`) |
-| jwt-decode | 4.0.0 | Decode JWT tokens from external auth backend (imported but not actively used) |
-| apexcharts / react-apexcharts | 3.44.0 / 1.4.1 | Charts on the Home dashboard page |
-| bootstrap | 5.3.3 | Included but minimal usage (Material Tailwind handles most styling) |
-| sheetjs-style / xlsx-style | 0.15.8 / 0.8.13 | Excel cell styling (partially duplicates ExcelJS capabilities) |
-| prop-types | 15.8.1 | Runtime prop type checking for React components |
+| Technology                    | Version         | Purpose                                                                         |
+| ----------------------------- | --------------- | ------------------------------------------------------------------------------- |
+| React                         | 18.2.0          | UI component framework                                                          |
+| Vite                          | 4.x             | Build tool and dev server                                                       |
+| React Router DOM              | 6.17.0          | Client-side routing                                                             |
+| Material Tailwind             | 2.1.4           | UI component library (buttons, cards, dialogs, inputs)                          |
+| Tailwind CSS                  | 3.3.4           | Utility-first CSS                                                               |
+| Heroicons                     | 2.0.18          | SVG icon set (used in sidebar/navbar)                                           |
+| XLSX (SheetJS)                | 0.18.5          | Client-side Excel parsing (read raw manifest files)                             |
+| ExcelJS                       | 4.4.0           | Client-side Excel generation (write formatted output files with styles/borders) |
+| jsPDF                         | 2.5.1           | Client-side PDF generation (customs declaration forms)                          |
+| jsPDF-autotable               | 3.8.2           | Table rendering plugin for jsPDF                                                |
+| @react-pdf/renderer           | 3.4.4           | Alternative React-based PDF rendering (imported but usage unclear)              |
+| pdf-lib                       | — (backend)     | Used in backend converter.js only                                               |
+| pdfjs-dist                    | 4.8.69          | Client-side PDF reading/parsing (to extract info from uploaded PDFs)            |
+| mammoth                       | 1.8.0           | Client-side Word (.docx) file parsing (to extract customs info)                 |
+| axios                         | 1.7.2           | HTTP client for API calls to local backends                                     |
+| file-saver                    | 2.0.5           | `saveAs()` to trigger browser downloads of generated files                      |
+| string-similarity             | 4.0.4           | Fuzzy string matching for NGP code lookup when exact match fails                |
+| moment                        | 2.30.1          | Date formatting/manipulation                                                    |
+| sweetalert                    | 2.1.2           | Confirmation and alert dialogs (`swal()`)                                       |
+| jwt-decode                    | 4.0.0           | Decode JWT tokens from external auth backend (imported but not actively used)   |
+| apexcharts / react-apexcharts | 3.44.0 / 1.4.1  | Charts on the Home dashboard page                                               |
+| bootstrap                     | 5.3.3           | Included but minimal usage (Material Tailwind handles most styling)             |
+| sheetjs-style / xlsx-style    | 0.15.8 / 0.8.13 | Excel cell styling (partially duplicates ExcelJS capabilities)                  |
+| prop-types                    | 15.8.1          | Runtime prop type checking for React components                                 |
 
 ---
 
 ## Backend Stack (`tyaybi_back/`)
 
-| Technology | Version | Purpose |
-|---|---|---|
-| Express | 4.19.2 | HTTP server and REST API |
-| multer | 1.4.5-lts.1 | Multipart file upload handling |
-| ExcelJS | 4.4.0 | Read uploaded Excel files server-side |
-| pdf-lib | 1.17.1 | PDF creation and manipulation |
-| @pdf-lib/fontkit | 1.1.1 | Custom font embedding in PDFs |
-| fontkit | 2.0.2 | Peer dependency for font handling |
-| pdfkit | 0.15.0 | Alternative PDF generation (used in `puper.js` for DUM form prototype) |
-| puppeteer | 23.4.1 | Headless browser (installed but appears unused in production routes) |
-| cors | 2.8.5 | CORS headers for cross-origin frontend requests |
-| body-parser | 1.20.2 | Parse JSON and URL-encoded request bodies |
+| Technology       | Version     | Purpose                                                                |
+| ---------------- | ----------- | ---------------------------------------------------------------------- |
+| Express          | 4.19.2      | HTTP server and REST API                                               |
+| multer           | 1.4.5-lts.1 | Multipart file upload handling                                         |
+| ExcelJS          | 4.4.0       | Read uploaded Excel files server-side                                  |
+| pdf-lib          | 1.17.1      | PDF creation and manipulation                                          |
+| @pdf-lib/fontkit | 1.1.1       | Custom font embedding in PDFs                                          |
+| fontkit          | 2.0.2       | Peer dependency for font handling                                      |
+| pdfkit           | 0.15.0      | Alternative PDF generation (used in `puper.js` for DUM form prototype) |
+| puppeteer        | 23.4.1      | Headless browser (installed but appears unused in production routes)   |
+| cors             | 2.8.5       | CORS headers for cross-origin frontend requests                        |
+| body-parser      | 1.20.2      | Parse JSON and URL-encoded request bodies                              |
 
 ---
 
 ## Folder Structure
 
 ### Frontend (`tyaybi_front/src/`)
+
 ```
 src/
 ├── App.jsx                  — Root router: /dashboard/* and /auth/*
@@ -144,6 +145,7 @@ src/
 ```
 
 ### Backend (`tyaybi_back/`)
+
 ```
 tyaybi_back/
 ├── index.js      — Main Express API server (port 3000). NGP CRUD + Excel upload endpoints.
@@ -179,22 +181,23 @@ tyaybi_back/
 
 **There are NO `.env` files.** All configuration is hardcoded.
 
-| Value | Location | Current Value |
-|---|---|---|
-| External backend URL | `src/services/envirenment.js` | `http://localhost:5000` |
-| NGP backend URL | `src/services/ngpservice.js` | `http://localhost:3000` |
-| Express port | `tyaybi_back/index.js` | `3000` |
-| Admin email | `src/pages/auth/sign-in.jsx` | `admin@gmail.com` |
-| Admin password | `src/pages/auth/sign-in.jsx` | `12345` |
-| bddngp.json path (backend) | `tyaybi_back/index.js` | `../tyaybi_front/src/pages/dashboard/clients/bddngp.json` |
-| Alias `@` | `vite.config.js` | resolves to `/src` |
-| PDF worker path | `convertpdf.jsx`, `test.jsx` | `/pdf.worker.mjs` (from public/) |
+| Value                      | Location                      | Current Value                                             |
+| -------------------------- | ----------------------------- | --------------------------------------------------------- |
+| External backend URL       | `src/services/envirenment.js` | `http://localhost:5000`                                   |
+| NGP backend URL            | `src/services/ngpservice.js`  | `http://localhost:3000`                                   |
+| Express port               | `tyaybi_back/index.js`        | `3000`                                                    |
+| Admin email                | `src/pages/auth/sign-in.jsx`  | `admin@gmail.com`                                         |
+| Admin password             | `src/pages/auth/sign-in.jsx`  | `12345`                                                   |
+| bddngp.json path (backend) | `tyaybi_back/index.js`        | `../tyaybi_front/src/pages/dashboard/clients/bddngp.json` |
+| Alias `@`                  | `vite.config.js`              | resolves to `/src`                                        |
+| PDF worker path            | `convertpdf.jsx`, `test.jsx`  | `/pdf.worker.mjs` (from public/)                          |
 
 ---
 
 ## How to Run
 
 ### Frontend
+
 ```bash
 cd tyaybi_front
 npm install
@@ -202,6 +205,7 @@ npm run dev   # Vite dev server, typically http://localhost:5173
 ```
 
 ### Backend (NGP API)
+
 ```bash
 cd tyaybi_back
 npm install
@@ -209,5 +213,6 @@ node index.js  # Starts at http://localhost:3000
 ```
 
 ### Login
+
 - Navigate to the app → sign in with `admin@gmail.com` / `12345`
 - The external backend at port 5000 is not required for the Excel/NGP features to work

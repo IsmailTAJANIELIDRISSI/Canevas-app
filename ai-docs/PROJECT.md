@@ -9,6 +9,7 @@ This is a **Moroccan customs declaration automation tool** built for a freight f
 ## Business Logic and Core Rules
 
 ### Excelslice (Main Page — `convertpdf.jsx`)
+
 1. User uploads a raw manifest Excel file (airline format with columns: waybill number, product description, pieces, total value, weight, etc.).
 2. Optionally uploads an **exclusion file** (Excel with a list of waybill numbers to skip).
 3. The app reads the manifest starting from row 6 (rows 1–5 are headers/metadata).
@@ -28,6 +29,7 @@ This is a **Moroccan customs declaration automation tool** built for a freight f
 11. A secondary info extraction flow reads a **Word (.docx) or PDF file** (e.g., freight invoice/BL) to auto-populate form fields like gross weight, MAWB, dates.
 
 ### Model 5 (`newmodel.jsx`)
+
 1. Accepts a different Excel format where NGP codes already exist in column 15 (index 14).
 2. Reads the 2-digit prefix of each NGP code and applies a **hard-coded switch mapping** to a standardized 10-digit `Code NGP(à 10 chiffres)`. This covers chapters 01–96 of the HS nomenclature.
 3. Alternatively, if the NGP column is empty, it attempts a fallback lookup against `bddngp.json` (same description→NGP lookup as Excelslice).
@@ -35,12 +37,14 @@ This is a **Moroccan customs declaration automation tool** built for a freight f
 5. Outputs a modified Excel with the mapped NGP codes filled in.
 
 ### NGP Database Management (`ngpbdd.jsx`)
+
 1. CRUD interface over the `bddngp.json` file, served via the Express backend (port 3000).
 2. Entries: `{ "Désignation commerciale": string, "Code NGP(à 10 chiffres)": number, "TAUX": number }`.
 3. Functions: list all, search by designation, add single entry, bulk-add from Excel upload, delete by designation+code, update by designation+code, find duplicate designations.
 4. Pagination: 6 items per page, with prev/next controls.
 
 ### Authentication
+
 - Login: hardcoded check — `admin@gmail.com` / `12345`. If match, sets `localStorage.token = 1` and redirects to dashboard.
 - The `loginservice.js` file also targets an external API at `http://localhost:5000` for real JWT-based login/register, but that backend is not included in this repo and is not currently used by the sign-in form.
 - Dashboard layout guard: checks `localStorage.token`; redirects to sign-in if absent.
@@ -51,6 +55,7 @@ This is a **Moroccan customs declaration automation tool** built for a freight f
 ## Data Flow
 
 ### Excelslice Flow
+
 ```
 User uploads manifest.xlsx
   → FileReader reads ArrayBuffer
@@ -69,6 +74,7 @@ User uploads manifest.xlsx
 ```
 
 ### NGP Lookup Flow
+
 ```
 Frontend (convertpdf.jsx, newmodel.jsx)
   → static import of bddngp.json (bundled into app)
@@ -79,6 +85,7 @@ Frontend (ngpbdd.jsx) — for CRUD management
 ```
 
 ### Excel→PDF Backend Flow (currently unused in main UI)
+
 ```
 POST /upload with multipart Excel file
   → multer saves to uploads/
@@ -92,6 +99,7 @@ POST /upload with multipart Excel file
 ```
 
 ### Client Management Flow (partial/broken)
+
 ```
 Frontend clientservices.js
   → axios → http://localhost:5000 (external Django/FastAPI backend, not in repo)
@@ -103,6 +111,7 @@ Frontend clientservices.js
 ## Entities and Models
 
 ### NGP Entry (primary data entity)
+
 ```json
 {
   "Désignation commerciale": "string — product description in French/English",
@@ -110,15 +119,19 @@ Frontend clientservices.js
   "TAUX": "number — customs duty rate (percent)"
 }
 ```
+
 Stored in: `tyaybi_front/src/pages/dashboard/clients/bddngp.json` (static import + backend CRUD)
 
 ### Shipment Row (transient, from uploaded Excel)
+
 ```
 waybill_number, description, pieces, total_value_MAD, weight_kg, hawb, recipient_name, ...
 ```
+
 Columns: `Identifiant unique`, `N° ordre`, `Nombre Contenants`, `Type Contenant`, `Marque (N° Envoi)`, `Code NGP`, `Désignation commerciale`, `Pays d'origine`, `Indicateur de Paiement`, `Indicateur Occasion`, `Valeur`, `Devise`, `Quantité Article`, `Unité de mesure`, `Poids net`, `Quantité normalisée`, `Code Référence Accord`, `Code Référence Franchise`, `Nom et Prénom`, `CIN`, `Carton or bag N°`, `HAWB`
 
 ### Client (external entity, via port 5000)
+
 ```json
 {
   "raison_sociale": "string",
@@ -130,7 +143,9 @@ Columns: `Identifiant unique`, `N° ordre`, `Nombre Contenants`, `Type Contenant
 ```
 
 ### num.json (MAWB tracking)
+
 Tracks which MAWB+sheet combinations have been processed, with sequential code numbers (`codecpmt`, `codecpmt2`) for customs registration numbering. Format:
+
 ```json
 {
   "codecpmt": number,
@@ -140,6 +155,7 @@ Tracks which MAWB+sheet combinations have been processed, with sequential code n
 ```
 
 ### PDF Form Data (transient, user-entered)
+
 **DUM Form**: `{ poidBrute, date, city, time, colis, Numenregistrement, cityAbbrev, numtitre, country, countryAbbrev, exportateur, phrasecolis, codeqr }`
 **PDF3 (financial)**: `{ date1-5, time, code, ben, drp, codeem, codees, majoration1-4, echeance1-4 }`
 
@@ -157,12 +173,13 @@ Tracks which MAWB+sheet combinations have been processed, with sequential code n
 
 ## External APIs and Services
 
-| Service | URL | Status | Used for |
-|---|---|---|---|
-| Express backend (this repo) | `http://localhost:3000` | Active | NGP CRUD, Excel→PDF conversion |
-| External backend | `http://localhost:5000` | **Missing** | Auth (JWT), client CRUD, statistics |
+| Service                     | URL                     | Status      | Used for                            |
+| --------------------------- | ----------------------- | ----------- | ----------------------------------- |
+| Express backend (this repo) | `http://localhost:3000` | Active      | NGP CRUD, Excel→PDF conversion      |
+| External backend            | `http://localhost:5000` | **Missing** | Auth (JWT), client CRUD, statistics |
 
 ### Backend API Endpoints (port 3000)
+
 ```
 GET    /data                          — Get all NGP entries
 GET    /data/filter?designationCommerciale=  — Search NGP by description
@@ -176,6 +193,7 @@ POST   /uploadJsonData                — Upload Excel, bulk-add to bddngp.json
 ```
 
 ### External Backend API (port 5000, not in repo)
+
 ```
 POST   /login
 POST   /register/
