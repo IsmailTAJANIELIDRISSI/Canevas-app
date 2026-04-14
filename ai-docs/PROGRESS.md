@@ -192,6 +192,30 @@ Added **"▶ Découper tous les LTAs (N)"** button that appears between the conf
 
 ---
 
+## Session 15 — PARTAGE root path MAWB scan fix
+
+### Problem
+
+`/lta/scan` only searched direct children of `partagePath` for `MAWB {ref}` folders. When the user provides the root path `\\10.0.0.15\partage\PARTAGE`, direct children are **type subfolders** (`ALIEXPRESS/`, `TEMU HKG/`, `TEMU SPEEDAF/`), not MAWB folders → scan always returns `found: false`.
+
+When the user manually typed the type subfolder path (e.g. `\\10.0.0.15\partage\PARTAGE\ALIEXPRESS`) it worked because MAWB folders are direct children there.
+
+### Solution
+
+Made the scan automatically descend one level into subdirectories when the MAWB folder isn't found at the top level:
+
+1. Try `partagePath` direct children first (existing behavior, fast path)
+2. If not found, iterate all subdirectories of `partagePath` and search each for the MAWB folder
+3. Stop at first match
+
+Extracted into local `findMawbFolder(searchPath, targetKey)` helper to avoid code duplication.
+
+### Files Modified
+
+- `tyaybi_back/index.js` — `/lta/scan` endpoint: 2-level MAWB search
+
+---
+
 ## Session 8 — Free-text currency input + openexchangerates 3rd fallback
 
 ### Problem

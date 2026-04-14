@@ -22,6 +22,10 @@ tyaybi_back/temp.*
 /*.xlsx
 /*.xls
 
+# Vite cache (auto-generated, never commit)
+.vite/
+dist/
+
 # OS / editor
 .DS_Store
 Thumbs.db

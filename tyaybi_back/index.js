@@ -375,16 +375,37 @@ app.post("/lta/scan", (req, res) => {
     if (!trimmedRef) continue;
 
     // Search for folder matching "MAWB {ref}" (case-insensitive, ignoring spaces)
+    // Searches partagePath directly first, then one level of subdirectories
+    // (to support root paths like \\server\PARTAGE that contain type subfolders
+    //  e.g. ALIEXPRESS/, TEMU HKG/, TEMU SPEEDAF/ each containing MAWB folders)
     let folderPath = null;
+    function findMawbFolder(searchPath, targetKey) {
+      try {
+        const entries = fs.readdirSync(searchPath, { withFileTypes: true });
+        const match = entries.find(
+          (e) =>
+            e.isDirectory() &&
+            e.name.toLowerCase().replace(/\s+/g, "") === targetKey,
+        );
+        return match ? path.join(searchPath, match.name) : null;
+      } catch {
+        return null;
+      }
+    }
     try {
-      const entries = fs.readdirSync(partagePath, { withFileTypes: true });
       const targetKey = `mawb${trimmedRef.toLowerCase().replace(/\s+/g, "")}`;
-      const match = entries.find(
-        (e) =>
-          e.isDirectory() &&
-          e.name.toLowerCase().replace(/\s+/g, "") === targetKey,
-      );
-      if (match) folderPath = path.join(partagePath, match.name);
+      // 1. Try direct children of partagePath
+      folderPath = findMawbFolder(partagePath, targetKey);
+      // 2. If not found, search one level deeper (type subfolders)
+      if (!folderPath) {
+        const topEntries = fs.readdirSync(partagePath, { withFileTypes: true });
+        for (const entry of topEntries) {
+          if (!entry.isDirectory()) continue;
+          const subPath = path.join(partagePath, entry.name);
+          folderPath = findMawbFolder(subPath, targetKey);
+          if (folderPath) break;
+        }
+      }
     } catch (e) {
       results.push({
         ref: trimmedRef,

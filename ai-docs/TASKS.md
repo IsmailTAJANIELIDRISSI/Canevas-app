@@ -1,5 +1,10 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ PARTAGE root path scan fix — DONE (Session 15)
+
+- `/lta/scan` now searches 2 levels deep: direct children first, then one level of subdirectories
+- User can enter `\\server\PARTAGE` (root) or `\\server\PARTAGE\ALIEXPRESS` (type subfolder) — both work
+
 ## ✅ Backend file generation refactor — DONE (Session 13)
 
 - New `POST /lta/generate-and-save`: receives sliceResult JSON, runs ExcelJS+pdf-lib server-side, writes to disk
