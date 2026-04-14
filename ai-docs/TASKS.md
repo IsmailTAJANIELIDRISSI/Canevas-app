@@ -1,5 +1,98 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ Backend file generation refactor — DONE (Session 13)
+
+- New `POST /lta/generate-and-save`: receives sliceResult JSON, runs ExcelJS+pdf-lib server-side, writes to disk
+- 90 HTTP calls → 1 call per LTA. 30–80 MB payload → ~200 KB
+- Per-card "Sauvegarder" and bulk "Enregistrer tout" both use it
+- Body-parser limit raised to 50 MB
+
+## 🔲 Architecture refactor: move file generation to backend (RECOMMENDED NEXT)
+
+**Problem**: For a 90-DUM manifest, the current flow makes 90+ HTTP requests and sends a 30–80MB base64 payload → 413 crash + browser freeze.
+
+**Plan**: New `POST /lta/generate-and-save` endpoint:
+
+- Receives `{ sliceResult, ref, folderPath }` (~200KB JSON max)
+- Backend runs ExcelJS + pdf-lib (no browser thread blocking)
+- Backend writes files directly to disk — zero base64 round-trip
+- Returns `{ saved[], errors[] }`
+- Frontend calls it once per LTA (not 90+ times)
+
+**Quick fix (unblocks today without refactor)**:
+
+- Raise `bodyParser.json({ limit: "200mb" })` in `tyaybi_back/index.js`
+- Send files one-at-a-time in `saveToFolder` instead of all-at-once
+
+---
+
+## ✅ UI cleanup + Desktop/Canevas auto-path — DONE (Session 12)
+
+- Action bar: one card with both "Découper tous" + "Enregistrer tout — Bureau/Canevas" buttons
+- Bulk download writes to `Desktop\Canevas\MAWB {réf}\` via backend, no folder picker
+- Currency input: plain text, no datalist
+
+## ✅ Bulk Slice all LTAs — DONE (Session 11)
+
+- "▶ Découper tous les LTAs (N)" button appears once ≥1 card has fret+manifest ready
+- Runs `handleExecute` sequentially for all eligible cards
+- Disabled while any card is processing
+
+## ✅ Stack overflow fix + Bulk download — DONE (Session 10)
+
+- `toBase64()` chunked encoder fixes `btoa` crash on large xlsx
+- "⬇ Tout télécharger" button: one `showDirectoryPicker` → subfolder per LTA ref
+
+---
+
+## ✅ ZIP Download + Save to PARTAGE — DONE (Session 9)
+
+- "Tout télécharger" → `{ref}.zip` with per-sheet `.xlsx` + `.pdf` + `summary_file.xlsx`
+- "Sauvegarder dans dossier" → writes all files to `{partagePath}\MAWB {ref}\` via backend
+- Progress counter on buttons, result feedback message
+- Backend: `/lta/sheet-to-pdf` + `/lta/save-results` endpoints added
+
+---
+
+## ✅ Free-text currency + OXR fallback — DONE (Session 8)
+
+- Frontend: `<select>` → `<input>` + `<datalist>` combobox (type any ISO code)
+- Backend: 3rd fallback via openexchangerates.org (covers any currency)
+- Chain: BAM → frankfurter blended → openexchangerates
+
+---
+
+## ✅ Exchange Rate API Fix — DONE (Session 6)
+
+- frankfurter.app swapped for exchangerate-api.com (MAD is not in ECB dataset)
+- Verified: CNY→MAD returns 1.36
+
+---
+
+## ✅ Exchange Rate — frankfurter.dev v2 — DONE (Session 7)
+
+- Switched `/exchange-rate` proxy from exchangerate-api.com to `api.frankfurter.dev/v2/rate/{from}/MAD`
+- Supports MAD via Bank Al-Maghrib provider
+- Verified: `CNY → MAD = 1.3609` ✓
+
+---
+
+## ✅ Acheminements CORS + Layout Fix — DONE (Session 5)
+
+- Backend: `/exchange-rate` proxy added — no more CORS block
+- Frontend: native `<input>`/`<select>` in `grid grid-cols-2` — no more style conflict
+
+---
+
+## ✅ Acheminements Feature — DONE (Session 4)
+
+- `src/utils/sliceManifest.js` created
+- `src/pages/dashboard/acheminements/index.jsx` created
+- `src/routes.jsx` updated with Acheminements route
+- Backend `/lta/scan` already present — no changes needed
+
+---
+
 ## Current State
 
 The core Excel processing and PDF generation (Excelslice, Model 5, NGP DB) are functional when both the frontend dev server and the Express backend are running. The app is in active development with significant cleanup and completion work needed.
@@ -49,12 +142,24 @@ The core Excel processing and PDF generation (Excelslice, Model 5, NGP DB) are f
 
 ### Phase 1 — Fix Blockers
 
-- [ ] Fix syntax error in `tyaybi_back/index.js` (remove trailing `0` after semicolon)
+- [x] Fix syntax error in `tyaybi_back/index.js` (remove trailing `0` after semicolon) ✓ DONE
+- [x] Add root `.gitignore` — `node_modules/`, `uploads/*`, generated PDFs, root xlsx ✓ DONE
 - [ ] Fix `filePath2` typo in `tyaybi_back/index.js`
 - [ ] Fix backend file path to use `path.resolve(__dirname, ...)` instead of relative path
 - [ ] Fix `statistics-cards-data.js` — either remove broken function calls or stub them safely so the home page doesn't crash
 
-### Phase 2 — Authentication
+### Phase 2 — Acheminements (NEW FEATURE) ✓ DONE
+
+- [x] Extract slice algorithm to `src/utils/sliceManifest.js` ✓ DONE
+- [x] Add `POST /lta/scan` endpoint to backend ✓ DONE
+- [x] Create `/Acheminements` page with:
+  - [x] PARTAGE path config (localStorage)
+  - [x] Multi-LTA ref input
+  - [x] Per-LTA card with inline PDF viewer, Fret + Currency inputs, live MAD calc
+  - [x] Execute → slice → download buttons (Excel all, per-sheet Excel/PDF)
+- [x] Add route in routes.jsx ✓ DONE
+
+### Phase 3 — Authentication
 
 - [ ] Replace hardcoded `admin@gmail.com / 12345` with real auth:
   - Option A: Build a simple Express auth route (hashed password, JWT) and wire it up
