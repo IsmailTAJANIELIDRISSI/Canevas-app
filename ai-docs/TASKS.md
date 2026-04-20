@@ -1,5 +1,15 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ PDF Nombre Contenants blank (not "0") — DONE (Session 17)
+
+- PDF data rows now use falsy check `cell ? String(cell) : ""` matching `converter.js`
+- `0` renders blank in PDF; xlsx still stores `0` correctly
+
+## ✅ Summary header names fixed — DONE (Session 16)
+
+- `"Total Quantite"` → `"Total Pieces"`, `"Total fret"` → `"Total freight"`, `"Total position"` → `"total position"`
+- Now matches `convertpdf.jsx` line 1282 exactly
+
 ## ✅ PARTAGE root path scan fix — DONE (Session 15)
 
 - `/lta/scan` now searches 2 levels deep: direct children first, then one level of subdirectories

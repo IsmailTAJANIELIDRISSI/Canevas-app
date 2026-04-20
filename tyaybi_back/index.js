@@ -523,12 +523,12 @@ function buildSummaryDataXL(sliceResult) {
   const summaryData = [
     [
       "Sheet Name",
-      "Total Quantite",
+      "Total Pieces",
       "Total Value",
       "Total poid net",
       "Total poid brute",
-      "Total fret",
-      "Total position",
+      "Total freight",
+      "total position",
       "Assurance",
       "Carton",
     ],
@@ -807,7 +807,9 @@ async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
     let maxH = 0;
     let x = tableLeftPadding;
     row.forEach((cell, ci) => {
-      const cellText = cell != null ? String(cell).trim() : "";
+      // Falsy check matches converter.js: cell.value ? ... : ""
+      // This means 0 renders as blank in PDF (same as old behavior)
+      const cellText = cell ? String(cell).trim() : "";
       const cellWidth = colWidths[ci] ?? smallerCellWidth;
       maxH = Math.max(maxH, dataRowHeight);
       page.drawRectangle({

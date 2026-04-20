@@ -4,6 +4,47 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 17 — PDF Nombre Contenants 0 → blank fix
+
+### Problem
+
+`sheetRowsToPdf` in `index.js` used `cell != null ? String(cell) : ""` for data cell text.
+This rendered `0` as `"0"` in the PDF column "Nombre Contenants".
+
+Old `converter.js` uses `cell.value ? cell.value.toString() : ""` — JavaScript falsy check — so `0` renders as `""` (blank), matching the old behavior.
+
+### Solution
+
+Changed data row cell text resolution in `sheetRowsToPdf` to `cell ? String(cell).trim() : ""` — same falsy semantics as `converter.js`.
+Excel keeps `0` (correct for xlsx), PDF now shows blank (correct for PDF).
+
+### Files Modified
+
+- `tyaybi_back/index.js` — `sheetRowsToPdf` data row cell text check
+
+---
+
+## Session 16 — Summary header naming fix
+
+### Problem
+
+`buildSummaryDataXL` in `tyaybi_back/index.js` used wrong column names:
+- `"Total Quantite"` → should be `"Total Pieces"`
+- `"Total fret"` → should be `"Total freight"`
+- `"Total position"` → should be `"total position"`
+
+Original `convertpdf.jsx` line 1282 is the source of truth.
+
+### Solution
+
+Fixed all three headers in `buildSummaryDataXL` to match `convertpdf.jsx` exactly.
+
+### Files Modified
+
+- `tyaybi_back/index.js` — `buildSummaryDataXL` header row
+
+---
+
 ## Session 2 — Acheminements Feature Implementation
 
 ### Context
