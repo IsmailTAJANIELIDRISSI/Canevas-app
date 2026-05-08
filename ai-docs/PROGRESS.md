@@ -4,6 +4,24 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 18 — blocageUsdRate made optional
+
+### Problem
+
+Mode BLOCAGE required "Taux USD → MAD (Badr)" even when the freight is already in a non-USD currency or when the user only wants to exclude HAWBs. The alert blocked execution.
+
+### Solution
+
+- Removed the mandatory check on `blocageUsdRate` — only validate format if the user typed something
+- `tauxusdOverride` is passed as `null` when left empty (sliceManifest falls back to D4 from the manifest)
+- Label updated to show "(optionnel)"
+
+### Files Modified
+
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — validation + tauxusdOverride + label
+
+---
+
 ## Session 17 — PDF Nombre Contenants 0 → blank fix
 
 ### Problem
@@ -29,6 +47,7 @@ Excel keeps `0` (correct for xlsx), PDF now shows blank (correct for PDF).
 ### Problem
 
 `buildSummaryDataXL` in `tyaybi_back/index.js` used wrong column names:
+
 - `"Total Quantite"` → should be `"Total Pieces"`
 - `"Total fret"` → should be `"Total freight"`
 - `"Total position"` → should be `"total position"`

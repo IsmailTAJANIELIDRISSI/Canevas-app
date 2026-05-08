@@ -1,5 +1,10 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ blocageUsdRate optional in Mode BLOCAGE — DONE (Session 18)
+
+- Can now check Mode BLOCAGE and only enter HAWBs, leaving Taux USD blank
+- `tauxusdOverride = null` when empty → sliceManifest uses D4 from manifest
+
 ## ✅ PDF Nombre Contenants blank (not "0") — DONE (Session 17)
 
 - PDF data rows now use falsy check `cell ? String(cell) : ""` matching `converter.js`

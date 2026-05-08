@@ -561,8 +561,9 @@ export default function Acheminements() {
       return alert('Veuillez entrer la valeur Fret et attendre le taux de change.');
     }
     if (card.blocage) {
-      if (!card.blocageUsdRate || isNaN(parseFloat(card.blocageUsdRate))) {
-        return alert('Mode BLOCAGE : veuillez entrer le taux USD→MAD (Badr).');
+      // blocageUsdRate is optional — only validate if the user actually entered something
+      if (card.blocageUsdRate && isNaN(parseFloat(card.blocageUsdRate))) {
+        return alert('Mode BLOCAGE : taux USD→MAD invalide.');
       }
     }
 
@@ -573,7 +574,7 @@ export default function Acheminements() {
       const exclusionWaybills = card.blocage
         ? card.blocageHawbs.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
         : [];
-      const tauxusdOverride = card.blocage ? parseFloat(card.blocageUsdRate) : null;
+      const tauxusdOverride = card.blocage && card.blocageUsdRate ? parseFloat(card.blocageUsdRate) : null;
       const sliceResult = sliceManifest(bytes.buffer, card.madValue, exclusionWaybills, tauxusdOverride);
       updateCard(card.ref, { status: 'done', sliceResult });
     } catch (err) {
@@ -845,7 +846,7 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
                   <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
                     <div>
                       <Typography variant="small" className="mb-1 font-medium text-red-700">
-                        Taux USD → MAD (Badr)
+                        Taux USD → MAD (Badr) <span className="font-normal text-red-400">(optionnel)</span>
                       </Typography>
                       <input
                         type="number"
