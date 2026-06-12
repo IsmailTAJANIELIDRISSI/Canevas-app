@@ -496,6 +496,11 @@ export default function Acheminements() {
           const blob  = new Blob([bytes], { type: 'application/pdf' });
           pdfBlobUrl  = URL.createObjectURL(blob);
         }
+        
+        // Auto-fill currency and fret from extracted metadata (if available)
+        const extractedCurrency = r.mawbCurrency || 'HKD';  // default to HKD
+        const extractedFret = r.fretValue || '';
+        
         return {
           ...card,
           status: 'ready',
@@ -504,10 +509,23 @@ export default function Acheminements() {
           pdfB64: r.pdfB64,
           pdfName: r.pdfName,
           pdfBlobUrl,
+          currency: extractedCurrency,
+          fret: extractedFret,
         };
       });
 
       setCards(newCards);
+      
+      // Auto-fetch exchange rates for cards with extracted fret values
+      setTimeout(() => {
+        newCards.forEach(async (c) => {
+          if (c.fret && !isNaN(parseFloat(c.fret)) && c.currency && /^[A-Z]{3}$/.test(c.currency)) {
+            const rate = await fetchExchangeRate(c.currency);
+            const mad = rate ? parseFloat(c.fret) * rate : null;
+            updateCard(c.ref, { rate, madValue: mad });
+          }
+        });
+      }, 100);
     } catch (err) {
       alert(`Erreur scan: ${err.message}`);
     } finally {

@@ -1,3 +1,4 @@
+require("dotenv").config({ quiet: true });
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -18,6 +19,27 @@ app.use(cors()); // Enable CORS for all routes
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "50mb" }));
 const consoFontPath = path.join(__dirname, "fonts", "Consolas.ttf"); // Update this path as necessary
+
+// ─── Daily MAWB extraction logs (grouped by LTA reference) ───────────────────
+const LOGS_DIR = path.join(__dirname, "logs");
+fs.mkdirSync(LOGS_DIR, { recursive: true });
+
+function dailyLogFileName() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}.logs`;
+}
+
+function appendLtaLog(ref, lines) {
+  if (!lines.length) return;
+  const filePath = path.join(LOGS_DIR, dailyLogFileName());
+  const timestamp = new Date().toISOString();
+  const block = `\n[${timestamp}] LTA ref ${ref} :\n${lines.join("\n")}\n`;
+  fs.appendFileSync(filePath, block);
+}
+
 // Configure multer to handle file uploads
 const upload = multer({
   dest: "uploads/",
@@ -359,8 +381,202 @@ app.get("/exchange-rate", async (req, res) => {
   }
 });
 
+// ─── MAWB PDF Metadata Extraction ─────────────────────────────────────────────
+
+const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+
+const KNOWN_CURRENCY_RE =
+  /\b(CNY|USD|HKD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|MYR|THB|AED|SAR|KWD|QAR|TWD|NZD|ZAR)\b/i;
+
+/**
+ * Extract currency and total prepaid from PDF text (best-effort regex).
+ * Returns { mawbCurrency: string|null, fretValue: string|null }
+ */
+function extractMetaFromPdfText(text) {
+  let mawbCurrency = null;
+  let fretValue = null;
+
+  // Currency: look near "Currency" label or anywhere in text
+  const currencyLabelIdx = text.search(/\bcurrency\b/i);
+  const searchWindow =
+    currencyLabelIdx >= 0
+      ? text.slice(currencyLabelIdx, currencyLabelIdx + 120)
+      : text;
+  const codeMatch = searchWindow.match(KNOWN_CURRENCY_RE);
+  if (codeMatch) {
+    mawbCurrency = codeMatch[1].toUpperCase();
+  }
+
+  // Total Prepaid: label followed by decimal number
+  // Matches: "Total Prepaid 12345.67" or "Total Prepaid\n12345.67"
+  const prepaidMatch = text.match(
+    /total\s+prepaid[^\n]{0,80}\n?[^\n]{0,40}?(\d[\d ,.]*\.\d{2})/i,
+  );
+  if (prepaidMatch) {
+    // Strip spaces and commas
+    fretValue = prepaidMatch[1].replace(/[\s,]/g, "");
+  }
+
+  return { mawbCurrency, fretValue };
+}
+
+/**
+ * Gemini Vision fallback — sends the raw PDF bytes to Gemini and asks for
+ * currency + total prepaid only. Used when regex extraction couldn't find
+ * one or both fields (scanned PDF or layout pdf-parse couldn't flatten).
+ * Returns { mawbCurrency, fretValue } — either may be null.
+ */
+async function supplementCurrencyFretViaVision(pdfBuffer, log = console.log) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    log("[mawb-extract] GEMINI_API_KEY absent — skipping vision fallback");
+    return { mawbCurrency: null, fretValue: null };
+  }
+
+  let genai;
+  try {
+    genai = require("@google/genai");
+  } catch {
+    log("[mawb-extract] @google/genai not installed — skipping vision fallback");
+    return { mawbCurrency: null, fretValue: null };
+  }
+
+  const client = new genai.GoogleGenAI({ apiKey });
+  const pdfBase64 = pdfBuffer.toString("base64");
+
+  const prompt = `This is an Air Waybill (MAWB). Extract exactly two values:
+1. CURRENCY — the 3-letter ISO code in the "Currency" column (e.g. CNY, USD, TWD, HKD).
+2. TOTAL PREPAID — the numeric amount in the "Total Prepaid" box at the bottom of the form.
+   STRICT RULES for the number:
+   - Strip any currency code prefix (e.g. "TWD575,770.00" -> "575770.00").
+   - Remove ALL thousands-separator commas (e.g. "575,770.00" -> "575770.00").
+   - KEEP the decimal point and exactly 2 decimal places (e.g. "575770.00", NOT "57577000").
+   - If the box is blank or shows zero, return null.
+
+Respond ONLY in this exact JSON (no markdown):
+{"currency": "TWD", "total_prepaid": "575770.00"}`;
+
+  for (const modelName of GEMINI_MODEL_FALLBACKS) {
+    try {
+      log(`[mawb-extract] calling Gemini Vision (${modelName})...`);
+      const response = await client.models.generateContent({
+        model: modelName,
+        contents: [
+          {
+            parts: [
+              { inlineData: { mimeType: "application/pdf", data: pdfBase64 } },
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+
+      let responseText = "";
+      if (response && typeof response.text === "string" && response.text) {
+        responseText = response.text;
+      } else if (response?.candidates?.[0]?.content?.parts) {
+        responseText = response.candidates[0].content.parts
+          .filter((p) => !p.thought)
+          .map((p) => p.text || "")
+          .join("\n");
+      }
+
+      responseText = responseText.trim();
+      log(`[mawb-extract] Gemini ${modelName} raw response: ${responseText.slice(0, 300)}`);
+      if (responseText.startsWith("```")) {
+        const start = responseText.indexOf("{");
+        const end = responseText.lastIndexOf("}") + 1;
+        responseText = start !== -1 ? responseText.slice(start, end) : responseText;
+      }
+
+      const parsed = JSON.parse(responseText);
+      let fretValue = parsed.total_prepaid != null ? String(parsed.total_prepaid).replace(/,/g, "") : null;
+      // Guard against Gemini dropping the decimal point (e.g. "57577000" instead of "575770.00")
+      if (fretValue && /^\d+$/.test(fretValue) && fretValue.length >= 5) {
+        fretValue = `${fretValue.slice(0, -2)}.${fretValue.slice(-2)}`;
+      }
+
+      log(`[mawb-extract] Gemini ${modelName} parsed: currency=${parsed.currency ?? "null"} total_prepaid=${fretValue ?? "null"}`);
+      return {
+        mawbCurrency: parsed.currency || null,
+        fretValue: fretValue || null,
+      };
+    } catch (e) {
+      log(`[mawb-extract] supplementCurrencyFretViaVision ${modelName} failed: ${e.message}`);
+    }
+  }
+
+  return { mawbCurrency: null, fretValue: null };
+}
+
+/**
+ * Extract currency + fret from MAWB PDF (accepts base64 or buffer).
+ * Returns { mawbCurrency, fretValue, method } — any field may be null.
+ */
+async function extractMawbMeta(pdfInput, log = console.log) {
+  const { PDFParse } = require("pdf-parse");
+
+  // Convert base64 to buffer if needed
+  const buf = Buffer.isBuffer(pdfInput)
+    ? pdfInput
+    : Buffer.from(pdfInput, "base64");
+
+  let mawbCurrency = null;
+  let fretValue = null;
+  let method = "text-extraction";
+
+  try {
+    const parser = new PDFParse({ data: buf });
+    const result = await parser.getText();
+    await parser.destroy();
+    const text = String(result.text || "");
+    const textLen = text.replace(/\s/g, "").length;
+    log(`[mawb-extract] pdf-parse extracted ${text.length} chars (${textLen} non-whitespace)`);
+
+    if (textLen < 50) {
+      method = "scanned-pdf";
+      log("[mawb-extract] looks like a scanned PDF (< 50 non-whitespace chars)");
+    } else {
+      ({ mawbCurrency, fretValue } = extractMetaFromPdfText(text));
+      log(`[mawb-extract] regex result: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"}`);
+    }
+  } catch (e) {
+    log(`[mawb-extract] extractMawbMeta error: ${e.message}`);
+    method = "error";
+  }
+
+  // Fall back to Gemini Vision if regex couldn't find one or both fields
+  if (!mawbCurrency || !fretValue) {
+    log(`[mawb-extract] missing field(s) (currency=${mawbCurrency ?? "null"}, fret=${fretValue ?? "null"}) — trying Gemini Vision`);
+    const vision = await supplementCurrencyFretViaVision(buf, log);
+    if (!mawbCurrency && vision.mawbCurrency) mawbCurrency = vision.mawbCurrency;
+    if (!fretValue && vision.fretValue) fretValue = vision.fretValue;
+    if (vision.mawbCurrency || vision.fretValue) {
+      method = method === "text-extraction" ? "text+vision" : "vision";
+    }
+  }
+
+  log(`[mawb-extract] final: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"} method=${method}`);
+  return { mawbCurrency, fretValue, method };
+}
+
+// Endpoint: extract currency + fret from uploaded PDF
+app.post("/lta/extract-mawb-meta", async (req, res) => {
+  const { pdfB64 } = req.body;
+  if (!pdfB64) {
+    return res.status(400).json({ error: "pdfB64 required" });
+  }
+
+  try {
+    const result = await extractMawbMeta(pdfB64);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // LTA PARTAGE scan endpoint
-app.post("/lta/scan", (req, res) => {
+app.post("/lta/scan", async (req, res) => {
   const { partagePath, refs } = req.body;
   if (!partagePath || !refs || !Array.isArray(refs)) {
     return res
@@ -432,6 +648,27 @@ app.post("/lta/scan", (req, res) => {
         ? fs.readFileSync(path.join(folderPath, pdfFile)).toString("base64")
         : null;
 
+      // Extract currency + fret from PDF (best-effort), logging to console + daily LTA log file
+      let mawbCurrency = null, fretValue = null;
+      const logLines = [];
+      const log = (msg) => {
+        console.log(msg);
+        logLines.push(msg);
+      };
+      if (pdfB64) {
+        log(`[mawb-extract] === LTA ${trimmedRef} — extracting from "${pdfFile}" ===`);
+        try {
+          const meta = await extractMawbMeta(pdfB64, log);
+          mawbCurrency = meta.mawbCurrency;
+          fretValue = meta.fretValue;
+        } catch (e) {
+          log(`[mawb-extract] LTA ${trimmedRef} extraction threw: ${e.message}`);
+        }
+      } else {
+        log(`[mawb-extract] === LTA ${trimmedRef} — no PDF found in folder ===`);
+      }
+      appendLtaLog(trimmedRef, logLines);
+
       results.push({
         ref: trimmedRef,
         found: true,
@@ -439,6 +676,8 @@ app.post("/lta/scan", (req, res) => {
         manifestName: xlsxFile || null,
         pdfB64,
         pdfName: pdfFile || null,
+        mawbCurrency,
+        fretValue,
       });
     } catch (e) {
       results.push({

@@ -1,5 +1,28 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ pdf-parse v2 API fix — DONE (Session 21)
+
+- `extractMawbMeta` was throwing `pdfParse is not a function` on every PDF
+  (pdf-parse@2.4.5 exports a `PDFParse` class, not a function)
+- Fixed: `new PDFParse({ data: buf }).getText()` → `result.text`
+- Regex extraction now works for normal text-based MAWBs; Gemini Vision fallback
+  only triggers for genuinely scanned PDFs or odd layouts
+
+## ✅ Daily MAWB extraction logs grouped by LTA ref — DONE (Session 20)
+
+- `/lta/scan` now writes `tyaybi_back/logs/DD-MM-YYYY.logs` (gitignored)
+- Each LTA gets a `[timestamp] LTA ref {ref} :` block with all `[mawb-extract]` lines
+  (pdf-parse char count, regex result, Gemini Vision attempts/responses, final result)
+- Same lines still print to console as before
+
+## ✅ Gemini Vision fallback for MAWB currency/fret — DONE (Session 19)
+
+- `/lta/scan` auto-fills Devise + Fret inputs from the MAWB PDF (regex first)
+- When regex misses currency or total prepaid, `extractMawbMeta` now falls back to
+  Gemini Vision (`gemini-2.5-flash` → `gemini-2.0-flash`) sending the raw PDF
+- Requires `GEMINI_API_KEY` in `tyaybi_back/.env` (gitignored) — already set
+- User still visually checks/corrects the auto-filled values before executing
+
 ## ✅ blocageUsdRate optional in Mode BLOCAGE — DONE (Session 18)
 
 - Can now check Mode BLOCAGE and only enter HAWBs, leaving Taux USD blank

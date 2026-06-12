@@ -4,6 +4,99 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 21 — Fix `pdf-parse` v2 API (regex extraction was always failing)
+
+### Problem
+
+Daily logs (Session 20) revealed `extractMawbMeta error: pdfParse is not a function`
+on every LTA — `pdf-parse@2.4.5` replaced the old callable-function export with a
+`PDFParse` class. Regex extraction never ran, so every PDF fell through to Gemini
+Vision, hitting 503 (server overload, transient) and 429 (free-tier quota = 0 for
+`gemini-2.0-flash`) errors.
+
+### Solution
+
+`extractMawbMeta` now uses the v2 API:
+```js
+const { PDFParse } = require("pdf-parse");
+const parser = new PDFParse({ data: buf });
+const result = await parser.getText();
+await parser.destroy();
+const text = result.text;
+```
+Verified against a generated PDF — text extracts correctly, regex can now find
+currency/fret without needing the Gemini fallback for normal text-based MAWBs.
+
+### Files Modified
+
+- `tyaybi_back/index.js` — `extractMawbMeta` uses `PDFParse` class instead of
+  calling `pdf-parse` as a function
+
+---
+
+## Session 20 — Daily MAWB extraction logs grouped by LTA reference
+
+### Problem
+
+Some LTAs' MAWB PDFs weren't getting currency/fret auto-filled, but the only debug
+output (Session 19's `[mawb-extract]` logs) went to the console, which is hard to
+review after the fact and not grouped per LTA.
+
+### Solution
+
+- Added `tyaybi_back/logs/` (gitignored), created on startup via `fs.mkdirSync`.
+- New helpers in `index.js`: `dailyLogFileName()` (returns `DD-MM-YYYY.logs`) and
+  `appendLtaLog(ref, lines)` which appends a `[timestamp] LTA ref {ref} :` block
+  followed by the collected log lines.
+- `extractMawbMeta` and `supplementCurrencyFretViaVision` now accept a `log`
+  callback (default `console.log`) instead of calling `console.log`/`console.error`
+  directly.
+- In `/lta/scan`, each ref gets its own `logLines` array fed to a `log()` function
+  that both prints to console AND collects lines; after extraction, `appendLtaLog`
+  writes the block to today's log file (e.g. `tyaybi_back/logs/11-06-2026.logs`).
+
+### Files Modified
+
+- `tyaybi_back/index.js` — `LOGS_DIR`, `dailyLogFileName`, `appendLtaLog`,
+  `log` callback plumbing in extraction functions and `/lta/scan`
+- `.gitignore` — added `tyaybi_back/logs/`
+
+---
+
+## Session 19 — Gemini Vision fallback for MAWB currency/fret extraction
+
+### Context
+
+`/lta/scan` already extracted `mawbCurrency`/`fretValue` from the MAWB PDF via regex
+(`extractMetaFromPdfText`) and the frontend already auto-filled the Devise/Fret inputs
+from those values (user just verifies/corrects with their eyes). Regex-only extraction
+fails on scanned PDFs (no text layer) and on text PDFs where pdf-parse flattens the
+"Total Prepaid" layout away.
+
+### Solution
+
+- Added `supplementCurrencyFretViaVision(pdfBuffer)` in `tyaybi_back/index.js` — sends
+  the raw PDF bytes to Gemini (`gemini-2.5-flash` → `gemini-2.0-flash` fallback) asking
+  only for `currency` + `total_prepaid`, with the same OCR/decimal-correction guards as
+  the reference implementation (strip thousands separators, reinsert missing decimal
+  point for integer-only responses).
+- `extractMawbMeta` now calls this fallback whenever regex left `mawbCurrency` or
+  `fretValue` null (covers both scanned PDFs and incomplete text extraction). `method`
+  field reflects `text-extraction` / `scanned-pdf` / `text+vision` / `vision` / `error`.
+- Added `tyaybi_back/.env` (gitignored) with `GEMINI_API_KEY`, loaded via
+  `require("dotenv").config({ quiet: true })` at the top of `index.js`.
+- Installed `dotenv` in `tyaybi_back/package.json`.
+
+### Files Modified
+
+- `tyaybi_back/index.js` — dotenv config, `GEMINI_MODEL_FALLBACKS`,
+  `supplementCurrencyFretViaVision`, updated `extractMawbMeta`
+- `tyaybi_back/package.json` — added `dotenv`
+- `tyaybi_back/.env` — new (gitignored), `GEMINI_API_KEY`
+- `.gitignore` — added `.env`
+
+---
+
 ## Session 18 — blocageUsdRate made optional
 
 ### Problem
