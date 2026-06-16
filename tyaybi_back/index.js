@@ -383,7 +383,7 @@ app.get("/exchange-rate", async (req, res) => {
 
 // ─── MAWB PDF Metadata Extraction ─────────────────────────────────────────────
 
-const GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash"];
+const GEMINI_MODEL_FALLBACKS = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
 
 const KNOWN_CURRENCY_RE =
   /\b(CNY|USD|HKD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|MYR|THB|AED|SAR|KWD|QAR|TWD|NZD|ZAR)\b/i;
@@ -420,10 +420,38 @@ function extractMetaFromPdfText(text) {
   return { mawbCurrency, fretValue };
 }
 
+// ── Gemini retry helpers ──────────────────────────────────────────────────────
+
+const GEMINI_MAX_ATTEMPTS = 3;
+const GEMINI_DEFAULT_RETRY_MS = 5000;
+const GEMINI_MAX_RETRY_MS = 15000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Gemini 429 errors include "retryDelay":"21.2s" (or "Please retry in 21.2s") —
+// extract that so we wait roughly as long as Google asks (plus a small buffer),
+// but cap it at GEMINI_MAX_RETRY_MS so a single LTA doesn't stall the scan too long.
+function parseGeminiRetryDelayMs(message) {
+  const m =
+    String(message).match(/retryDelay["\s:]+(\d+(?:\.\d+)?)s/i) ||
+    String(message).match(/retry in (\d+(?:\.\d+)?)s/i);
+  if (!m) return null;
+  return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 1000, GEMINI_MAX_RETRY_MS);
+}
+
+// 429 (quota) and 503 (overloaded) are transient — worth retrying after a delay.
+function isRetryableGeminiError(message) {
+  return /RESOURCE_EXHAUSTED|UNAVAILABLE|429|503/.test(String(message));
+}
+
 /**
  * Gemini Vision fallback — sends the raw PDF bytes to Gemini and asks for
  * currency + total prepaid only. Used when regex extraction couldn't find
  * one or both fields (scanned PDF or layout pdf-parse couldn't flatten).
+ * Retries each model up to GEMINI_MAX_ATTEMPTS times on 429/503 errors,
+ * waiting the delay Google requests (or a default backoff) between tries.
  * Returns { mawbCurrency, fretValue } — either may be null.
  */
 async function supplementCurrencyFretViaVision(pdfBuffer, log = console.log) {
@@ -457,52 +485,61 @@ Respond ONLY in this exact JSON (no markdown):
 {"currency": "TWD", "total_prepaid": "575770.00"}`;
 
   for (const modelName of GEMINI_MODEL_FALLBACKS) {
-    try {
-      log(`[mawb-extract] calling Gemini Vision (${modelName})...`);
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            parts: [
-              { inlineData: { mimeType: "application/pdf", data: pdfBase64 } },
-              { text: prompt },
-            ],
-          },
-        ],
-      });
+    for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+      try {
+        log(`[mawb-extract] calling Gemini Vision (${modelName}), attempt ${attempt}/${GEMINI_MAX_ATTEMPTS}...`);
+        const response = await client.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              parts: [
+                { inlineData: { mimeType: "application/pdf", data: pdfBase64 } },
+                { text: prompt },
+              ],
+            },
+          ],
+        });
 
-      let responseText = "";
-      if (response && typeof response.text === "string" && response.text) {
-        responseText = response.text;
-      } else if (response?.candidates?.[0]?.content?.parts) {
-        responseText = response.candidates[0].content.parts
-          .filter((p) => !p.thought)
-          .map((p) => p.text || "")
-          .join("\n");
+        let responseText = "";
+        if (response && typeof response.text === "string" && response.text) {
+          responseText = response.text;
+        } else if (response?.candidates?.[0]?.content?.parts) {
+          responseText = response.candidates[0].content.parts
+            .filter((p) => !p.thought)
+            .map((p) => p.text || "")
+            .join("\n");
+        }
+
+        responseText = responseText.trim();
+        log(`[mawb-extract] Gemini ${modelName} raw response: ${responseText.slice(0, 300)}`);
+        if (responseText.startsWith("```")) {
+          const start = responseText.indexOf("{");
+          const end = responseText.lastIndexOf("}") + 1;
+          responseText = start !== -1 ? responseText.slice(start, end) : responseText;
+        }
+
+        const parsed = JSON.parse(responseText);
+        let fretValue = parsed.total_prepaid != null ? String(parsed.total_prepaid).replace(/,/g, "") : null;
+        // Guard against Gemini dropping the decimal point (e.g. "57577000" instead of "575770.00")
+        if (fretValue && /^\d+$/.test(fretValue) && fretValue.length >= 5) {
+          fretValue = `${fretValue.slice(0, -2)}.${fretValue.slice(-2)}`;
+        }
+
+        log(`[mawb-extract] Gemini ${modelName} parsed: currency=${parsed.currency ?? "null"} total_prepaid=${fretValue ?? "null"}`);
+        return {
+          mawbCurrency: parsed.currency || null,
+          fretValue: fretValue || null,
+        };
+      } catch (e) {
+        log(`[mawb-extract] Gemini ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed: ${e.message}`);
+        if (attempt < GEMINI_MAX_ATTEMPTS && isRetryableGeminiError(e.message)) {
+          const delayMs = parseGeminiRetryDelayMs(e.message) ?? GEMINI_DEFAULT_RETRY_MS * attempt;
+          log(`[mawb-extract] waiting ${Math.round(delayMs / 1000)}s before retrying ${modelName}...`);
+          await sleep(delayMs);
+          continue;
+        }
+        break; // give up on this model, try the next fallback
       }
-
-      responseText = responseText.trim();
-      log(`[mawb-extract] Gemini ${modelName} raw response: ${responseText.slice(0, 300)}`);
-      if (responseText.startsWith("```")) {
-        const start = responseText.indexOf("{");
-        const end = responseText.lastIndexOf("}") + 1;
-        responseText = start !== -1 ? responseText.slice(start, end) : responseText;
-      }
-
-      const parsed = JSON.parse(responseText);
-      let fretValue = parsed.total_prepaid != null ? String(parsed.total_prepaid).replace(/,/g, "") : null;
-      // Guard against Gemini dropping the decimal point (e.g. "57577000" instead of "575770.00")
-      if (fretValue && /^\d+$/.test(fretValue) && fretValue.length >= 5) {
-        fretValue = `${fretValue.slice(0, -2)}.${fretValue.slice(-2)}`;
-      }
-
-      log(`[mawb-extract] Gemini ${modelName} parsed: currency=${parsed.currency ?? "null"} total_prepaid=${fretValue ?? "null"}`);
-      return {
-        mawbCurrency: parsed.currency || null,
-        fretValue: fretValue || null,
-      };
-    } catch (e) {
-      log(`[mawb-extract] supplementCurrencyFretViaVision ${modelName} failed: ${e.message}`);
     }
   }
 

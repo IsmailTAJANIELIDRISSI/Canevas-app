@@ -1,5 +1,16 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ Retry Gemini Vision on 429/503 (quota/overload) — DONE (Session 22)
+
+- `supplementCurrencyFretViaVision` retries each model up to 3 attempts on
+  `RESOURCE_EXHAUSTED` (429) or `UNAVAILABLE` (503)
+- Waits Google's requested `retryDelay` (parsed from the error message + 1s
+  buffer), or a default backoff (`5s * attempt`) if not present
+- Non-retryable errors (or attempts exhausted) move on to the next model
+  fallback; only gives up entirely after all models/attempts fail
+- Fixes batch scans where the last LTAs hit the free-tier RPM limit and
+  returned `currency=null, fret=null`
+
 ## ✅ pdf-parse v2 API fix — DONE (Session 21)
 
 - `extractMawbMeta` was throwing `pdfParse is not a function` on every PDF

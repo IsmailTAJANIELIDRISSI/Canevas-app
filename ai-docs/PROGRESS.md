@@ -4,6 +4,45 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 22 — Retry Gemini Vision calls on 429/503 (quota/overload) errors
+
+### Problem
+
+In a multi-LTA batch scan, the last LTAs were failing extraction
+(`method=scanned-pdf`, currency=null, fret=null) because `gemini-2.5-flash`'s
+free-tier limit (5 requests/minute) was exhausted partway through the scan,
+returning `429 RESOURCE_EXHAUSTED`. `gemini-2.0-flash` also returned 429 (0 quota
+on this key's tier). With no retry, the function gave up immediately on both
+models for those LTAs.
+
+### Solution
+
+Added retry-with-delay helpers in `tyaybi_back/index.js`, right before
+`supplementCurrencyFretViaVision`:
+
+- `GEMINI_MAX_ATTEMPTS = 3`, `GEMINI_DEFAULT_RETRY_MS = 5000`
+- `sleep(ms)` — promise-based delay
+- `parseGeminiRetryDelayMs(message)` — extracts Google's requested
+  `"retryDelay":"21.2s"` (or `"retry in 21.2s"`) from the error message and
+  returns that delay + 1s buffer in ms, or `null` if not present
+- `isRetryableGeminiError(message)` — true for `RESOURCE_EXHAUSTED` (429) or
+  `UNAVAILABLE` (503)
+
+`supplementCurrencyFretViaVision` now wraps each model's call in an inner
+attempt loop (1..`GEMINI_MAX_ATTEMPTS`). On a retryable error it waits
+`parseGeminiRetryDelayMs(e.message) ?? GEMINI_DEFAULT_RETRY_MS * attempt` before
+retrying the same model; on a non-retryable error (or after the last attempt)
+it breaks and falls through to the next model fallback. Only returns
+`{ mawbCurrency: null, fretValue: null }` after every model/attempt combination
+has been exhausted.
+
+### Files Modified
+
+- `tyaybi_back/index.js` — added retry helpers + wrapped
+  `supplementCurrencyFretViaVision`'s model loop with a per-model attempt loop
+
+---
+
 ## Session 21 — Fix `pdf-parse` v2 API (regex extraction was always failing)
 
 ### Problem
