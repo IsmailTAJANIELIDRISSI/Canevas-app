@@ -383,6 +383,7 @@ function makeCard(ref) {
     status: 'idle',         // idle | loading | ready | processing | done | error
     manifestB64: null,
     manifestName: null,
+    manifestSrcPath: null,
     pdfB64: null,
     pdfName: null,
     pdfBlobUrl: null,
@@ -440,7 +441,7 @@ export default function Acheminements() {
         const res = await fetch('http://localhost:3000/lta/generate-and-save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath }),
+          body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName }),
         });
         for await (const event of readSSE(res)) {
           if (event.type === 'progress') {
@@ -506,6 +507,7 @@ export default function Acheminements() {
           status: 'ready',
           manifestB64: r.manifestB64,
           manifestName: r.manifestName,
+          manifestSrcPath: r.manifestSrcPath || null,
           pdfB64: r.pdfB64,
           pdfName: r.pdfName,
           pdfBlobUrl,
@@ -742,7 +744,7 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
       const res = await fetch('http://localhost:3000/lta/generate-and-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath }),
+        body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName }),
       });
       let result = null;
       for await (const event of readSSE(res)) {

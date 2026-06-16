@@ -1,5 +1,12 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ Manifest Excel copied to output folder — DONE (Session 23)
+
+- "Enregistrer tout — Bureau/Canevas" and per-card "Sauvegarder" now include the
+  original manifest Excel file in the output folder alongside DUM sheets
+- Frontend passes `manifestB64` + `manifestName` to `/lta/generate-and-save`
+- Backend writes the manifest as the first file in the folder (step 0)
+
 ## ✅ Retry Gemini Vision on 429/503 (quota/overload) — DONE (Session 22)
 
 - `supplementCurrencyFretViaVision` retries each model up to 3 attempts on

@@ -681,6 +681,7 @@ app.post("/lta/scan", async (req, res) => {
       const manifestB64 = xlsxFile
         ? fs.readFileSync(path.join(folderPath, xlsxFile)).toString("base64")
         : null;
+      const manifestSrcPath = xlsxFile ? path.join(folderPath, xlsxFile) : null;
       const pdfB64 = pdfFile
         ? fs.readFileSync(path.join(folderPath, pdfFile)).toString("base64")
         : null;
@@ -711,6 +712,7 @@ app.post("/lta/scan", async (req, res) => {
         found: true,
         manifestB64,
         manifestName: xlsxFile || null,
+        manifestSrcPath,
         pdfB64,
         pdfName: pdfFile || null,
         mawbCurrency,
@@ -1146,7 +1148,7 @@ async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
 // ─── Generate all files for one LTA and write them to folderPath ──────────────
 // Body: { sliceResult, ref, folderPath }
 app.post("/lta/generate-and-save", async (req, res) => {
-  const { sliceResult, ref, folderPath } = req.body;
+  const { sliceResult, ref, folderPath, manifestSrcPath, manifestName } = req.body;
   if (!sliceResult || !ref || !folderPath) {
     return res
       .status(400)
@@ -1170,7 +1172,8 @@ app.post("/lta/generate-and-save", async (req, res) => {
   const saved = [];
   const errors = [];
   const dumSheets = sliceResult.sheets.filter((s) => s.name !== "GLOBAL");
-  const total = 2 + dumSheets.length * 2; // summary + generated_excel + (xlsx + pdf) per DUM
+  const manifestExtra = manifestSrcPath && manifestName ? 1 : 0;
+  const total = 2 + dumSheets.length * 2 + manifestExtra; // summary + generated_excel + (xlsx + pdf) per DUM + optional manifest
   let done = 0;
 
   const write = (name, buf) => {
@@ -1183,6 +1186,17 @@ app.post("/lta/generate-and-save", async (req, res) => {
   };
 
   try {
+    // 0. manifest Excel — copy directly from PARTAGE source path
+    if (manifestSrcPath && manifestName) {
+      try {
+        fs.copyFileSync(manifestSrcPath, path.join(folderPath, manifestName));
+        saved.push(manifestName);
+      } catch (e) {
+        errors.push({ name: manifestName, error: e.message });
+      }
+      send({ type: "progress", step: manifestName, done: ++done, total });
+    }
+
     // 1. summary_file.xlsx
     const summaryBuf = await buildSummaryWorkbookXL(sliceResult);
     write("summary_file.xlsx", Buffer.from(summaryBuf));

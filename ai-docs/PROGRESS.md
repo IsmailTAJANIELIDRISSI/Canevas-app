@@ -4,6 +4,32 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 23 — Copy manifest Excel into Bureau/Canevas output folder
+
+### Problem
+
+"Découper tous" and "Enregistrer tout — Bureau/Canevas" saved DUM sheets, summary,
+and generated Excel but did NOT copy the original manifest Excel file into the folder.
+Users had to manually find and move it.
+
+### Solution
+
+- **Frontend** (`acheminements/index.jsx`): both `handleBulkDownloadAll` and
+  `handleSaveToFolder` now pass `manifestB64` and `manifestName` from the card
+  alongside the existing `sliceResult` payload.
+- **Backend** (`index.js` `/lta/generate-and-save`): destructures `manifestB64`
+  and `manifestName` from the request body. If present, decodes the base64 string
+  and writes the file as step 0 (before summary/generated sheets), using the
+  original filename. The progress `total` count is adjusted accordingly (+1).
+
+### Files Modified
+
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — `handleBulkDownloadAll`
+  and `handleSaveToFolder` include `manifestB64` + `manifestName` in the POST body
+- `tyaybi_back/index.js` — `/lta/generate-and-save` writes manifest file as first step
+
+---
+
 ## Session 22 — Retry Gemini Vision calls on 429/503 (quota/overload) errors
 
 ### Problem
