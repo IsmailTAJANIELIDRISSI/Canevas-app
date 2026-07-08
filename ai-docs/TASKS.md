@@ -1,5 +1,33 @@
 # TASKS.md — Current State and Next Steps
 
+## ℹ️ Model 5 page — documented (Session 24)
+
+**Route:** `/dashboard/Model5` → `Newmodel` component
+
+**What it does:** Auto-assigns Moroccan customs NGP codes (10-digit) to product rows
+in an uploaded Excel manifest and writes results back as a downloadable file.
+
+**Flow:**
+1. User uploads `.xlsx` — rows where col A starts with `U` or `M` are product lines
+2. For each row: reads col O (existing HS chapter code) and col C (description)
+3. `applySwitch(code)` maps first 2 digits of the code to a hardcoded 10-digit NGP
+4. Fallback: `findNgpCode(description)` looks up the description in `bddngp.json`,
+   then runs `applySwitch` on the result
+5. Writes NGP to col O, tax rate (hardcoded `taxRates` map, e.g. 56.3%) to col P
+6. Downloads `Modified_{filename}.xlsx`; separate download for missing-NGP rows
+
+**Database:** `bddngp.json` (local, bundled in frontend — NOT the backend copy)
+- Structure: `{ "Feuil1": [{ "Désignation commerciale": "...", "Code NGP(à 10 chiffres)": XXXX }] }`
+- Only stores 4-digit HS codes — `applySwitch` expands to full 10-digit NGP
+
+**Files:**
+- Frontend: `tyaybi_front/src/pages/dashboard/clients/newmodel.jsx` (all logic, no HTTP)
+- Database: `tyaybi_front/src/pages/dashboard/clients/bddngp.json`
+- No backend calls — 100% client-side (xlsx + ExcelJS + file-saver)
+
+**Known gap:** `bddngp.json` here is a separate copy from `tyaybi_back/bddngp.json`
+(the backend NGP DB used by "Gestion de BDD"). They may drift out of sync.
+
 ## ✅ Manifest Excel copied to output folder — DONE (Session 23)
 
 - "Enregistrer tout — Bureau/Canevas" and per-card "Sauvegarder" now include the

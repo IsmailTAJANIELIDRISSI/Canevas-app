@@ -4,6 +4,12 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 24 — Model 5 page audit (read-only)
+
+No code changed. Full behaviour documented in TASKS.md.
+
+---
+
 ## Session 23 — Copy manifest Excel into Bureau/Canevas output folder
 
 ### Problem

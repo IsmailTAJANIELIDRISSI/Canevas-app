@@ -33,3 +33,6 @@ Thumbs.db
 
 # Secrets
 .env
+
+# Separate standalone project — has its own repo
+model_five/
