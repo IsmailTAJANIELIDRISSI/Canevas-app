@@ -1,5 +1,18 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ model_five — Gestion BDD tab + Express backend — DONE (Session 25)
+
+- Tab navigation (Traitement | Gestion BDD) owned by shared Header in App.jsx
+- BddNgp.jsx: search, paginate, add, edit, delete, import Excel — all mobile-first
+- Express backend at `model_five/server/` (port 3001) with `bddngp.json` file storage
+- Frontend uses `VITE_API_URL` env var — set to Render URL for production
+- Deployed to `https://github.com/IsmailTAJANIELIDRISSI/model_five`
+
+**Deployment checklist for Gestion BDD:**
+1. Deploy `model_five/server/` to Render (free tier, keep-alive enabled)
+2. Set `VITE_API_URL=https://your-render-url.onrender.com` in Vercel env vars
+3. Redeploy Vercel frontend after setting env var
+
 ## ℹ️ Model 5 page — documented (Session 24)
 
 **Route:** `/dashboard/Model5` → `Newmodel` component

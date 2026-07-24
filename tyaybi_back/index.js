@@ -682,6 +682,7 @@ app.post("/lta/scan", async (req, res) => {
         ? fs.readFileSync(path.join(folderPath, xlsxFile)).toString("base64")
         : null;
       const manifestSrcPath = xlsxFile ? path.join(folderPath, xlsxFile) : null;
+      const pdfSrcPath = pdfFile ? path.join(folderPath, pdfFile) : null;
       const pdfB64 = pdfFile
         ? fs.readFileSync(path.join(folderPath, pdfFile)).toString("base64")
         : null;
@@ -713,6 +714,7 @@ app.post("/lta/scan", async (req, res) => {
         manifestB64,
         manifestName: xlsxFile || null,
         manifestSrcPath,
+        pdfSrcPath,
         pdfB64,
         pdfName: pdfFile || null,
         mawbCurrency,
@@ -1148,7 +1150,7 @@ async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
 // ─── Generate all files for one LTA and write them to folderPath ──────────────
 // Body: { sliceResult, ref, folderPath }
 app.post("/lta/generate-and-save", async (req, res) => {
-  const { sliceResult, ref, folderPath, manifestSrcPath, manifestName } = req.body;
+  const { sliceResult, ref, folderPath, manifestSrcPath, manifestName, pdfSrcPath, pdfName } = req.body;
   if (!sliceResult || !ref || !folderPath) {
     return res
       .status(400)
@@ -1173,7 +1175,8 @@ app.post("/lta/generate-and-save", async (req, res) => {
   const errors = [];
   const dumSheets = sliceResult.sheets.filter((s) => s.name !== "GLOBAL");
   const manifestExtra = manifestSrcPath && manifestName ? 1 : 0;
-  const total = 2 + dumSheets.length * 2 + manifestExtra; // summary + generated_excel + (xlsx + pdf) per DUM + optional manifest
+  const pdfExtra = pdfSrcPath && pdfName ? 1 : 0;
+  const total = 2 + dumSheets.length * 2 + manifestExtra + pdfExtra;
   let done = 0;
 
   const write = (name, buf) => {
@@ -1195,6 +1198,17 @@ app.post("/lta/generate-and-save", async (req, res) => {
         errors.push({ name: manifestName, error: e.message });
       }
       send({ type: "progress", step: manifestName, done: ++done, total });
+    }
+
+    // 0b. MAWB PDF — copy directly from PARTAGE source path
+    if (pdfSrcPath && pdfName) {
+      try {
+        fs.copyFileSync(pdfSrcPath, path.join(folderPath, pdfName));
+        saved.push(pdfName);
+      } catch (e) {
+        errors.push({ name: pdfName, error: e.message });
+      }
+      send({ type: "progress", step: pdfName, done: ++done, total });
     }
 
     // 1. summary_file.xlsx
@@ -1259,6 +1273,66 @@ app.post("/lta/generate-and-save", async (req, res) => {
 
   send({ type: "done", saved, errors, total: saved.length });
   res.end();
+});
+
+// ─── Open Outlook draft — reads already-saved files from the output folder ──
+const EMAIL_TO = "OUSSAMA.FARIS@medafrica-log.com; imad.amoudi@medafrica-log.com; nouhaila.elallali@medafrica-log.com; nouhaila.orfane@medafrica-log.com; hamza.kninis@medafrica-log.com";
+const { exec } = require("child_process");
+
+app.post("/lta/open-email-draft", (req, res) => {
+  const { ref, savedFolderPath } = req.body;
+  if (!ref || !savedFolderPath) {
+    return res.status(400).json({ error: "ref and savedFolderPath are required" });
+  }
+
+  // Verify folder exists before unlocking the button
+  if (!fs.existsSync(savedFolderPath)) {
+    return res.status(400).json({ error: `Dossier introuvable: ${savedFolderPath}. Sauvegardez d'abord les fichiers.` });
+  }
+
+  // Respond immediately so the button unlocks right away
+  res.json({ ok: true });
+
+  // Open Outlook in background — no file generation needed
+  setImmediate(async () => {
+    try {
+      const files = fs.readdirSync(savedFolderPath);
+      const SKIP = new Set(["summary_file.xlsx", "generated_excel.xlsx"]);
+      const attachments = files
+        .filter((f) => {
+          const l = f.toLowerCase();
+          return !SKIP.has(l) && (l.endsWith(".xlsx") || l.endsWith(".pdf"));
+        })
+        .map((f) => path.join(savedFolderPath, f));
+
+      if (!attachments.length) {
+        console.error(`[email-draft] no attachments found in ${savedFolderPath}`);
+        return;
+      }
+
+      const attachLines = attachments
+        .map((p) => `$mail.Attachments.Add("${p.replace(/\\/g, "\\\\")}") | Out-Null`)
+        .join("\n");
+
+      const psScript = [
+        `$outlook = New-Object -ComObject Outlook.Application`,
+        `$mail = $outlook.CreateItem(0)`,
+        `$mail.To = "${EMAIL_TO}"`,
+        `$mail.Subject = "Canevas de MAWB ${ref}"`,
+        attachLines,
+        `$mail.Display()`,
+      ].join("\n");
+
+      const scriptPath = path.join(os.tmpdir(), `open_draft_${ref}_${Date.now()}.ps1`);
+      fs.writeFileSync(scriptPath, psScript, "utf8");
+
+      exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, () => {
+        setTimeout(() => { try { fs.unlinkSync(scriptPath); } catch {} }, 15000);
+      });
+    } catch (e) {
+      console.error("[email-draft] error:", e.message);
+    }
+  });
 });
 
 // Returns the user's Desktop/Canevas path

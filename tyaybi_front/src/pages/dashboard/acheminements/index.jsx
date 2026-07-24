@@ -386,6 +386,7 @@ function makeCard(ref) {
     manifestSrcPath: null,
     pdfB64: null,
     pdfName: null,
+    pdfSrcPath: null,
     pdfBlobUrl: null,
     fret: '',
     currency: 'CNY',
@@ -411,6 +412,8 @@ export default function Acheminements() {
   const [scanning, setScanning] = useState(false);
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null); // { card, done, total }
+  const [bulkEmailing, setBulkEmailing] = useState(false);
+  const [bulkEmailProgress, setBulkEmailProgress] = useState(null); // { done, total }
   const rateTimers = useRef({});
 
   // Persist path
@@ -424,6 +427,40 @@ export default function Acheminements() {
       cards.forEach(c => { if (c.pdfBlobUrl) URL.revokeObjectURL(c.pdfBlobUrl); });
     };
   }, []); // eslint-disable-line
+
+  // ── bulk email ───────────────────────────────────────────────────────────
+
+  const handleBulkEmailAll = async () => {
+    const readyCards = cards.filter(c => c.sliceResult != null);
+    if (!readyCards.length) return;
+    setBulkEmailing(true);
+    setBulkEmailProgress({ done: 0, total: readyCards.length });
+
+    // Resolve Desktop/Canevas path (same location as bulk save)
+    let desktopPath = '';
+    try {
+      const pathRes = await fetch('http://localhost:3000/lta/desktop-path');
+      ({ desktopPath } = await pathRes.json());
+    } catch { /* use empty string — will fail gracefully per card */ }
+
+    for (let i = 0; i < readyCards.length; i++) {
+      const card = readyCards[i];
+      setBulkEmailProgress({ done: i, total: readyCards.length });
+      const savedFolderPath = desktopPath ? `${desktopPath}\\MAWB ${card.ref}` : null;
+      if (!savedFolderPath) { continue; }
+      try {
+        await fetch('http://localhost:3000/lta/open-email-draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ref: card.ref, savedFolderPath }),
+        });
+      } catch { /* continue to next card */ }
+      // small delay so Outlook has time to open each draft
+      if (i < readyCards.length - 1) await new Promise(r => setTimeout(r, 3000));
+    }
+    setBulkEmailProgress({ done: readyCards.length, total: readyCards.length });
+    setBulkEmailing(false);
+  };
 
   // ── bulk download ────────────────────────────────────────────────────────
 
@@ -441,7 +478,7 @@ export default function Acheminements() {
         const res = await fetch('http://localhost:3000/lta/generate-and-save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName }),
+          body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName, pdfSrcPath: card.pdfSrcPath, pdfName: card.pdfName }),
         });
         for await (const event of readSSE(res)) {
           if (event.type === 'progress') {
@@ -510,6 +547,7 @@ export default function Acheminements() {
           manifestSrcPath: r.manifestSrcPath || null,
           pdfB64: r.pdfB64,
           pdfName: r.pdfName,
+          pdfSrcPath: r.pdfSrcPath || null,
           pdfBlobUrl,
           currency: extractedCurrency,
           fret: extractedFret,
@@ -691,6 +729,25 @@ export default function Acheminements() {
                   : `⬇ Enregistrer tout — Bureau/Canevas (${cards.filter(c => c.sliceResult).length} LTA)`}
               </Button>
             )}
+            {cards.some(c => c.sliceResult) && (
+              <Button
+                color="blue"
+                disabled={bulkEmailing}
+                onClick={handleBulkEmailAll}
+                className="flex items-center gap-2"
+              >
+                {bulkEmailing ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                )}
+                {bulkEmailing
+                  ? `Email ${(bulkEmailProgress?.done ?? 0) + 1}/${bulkEmailProgress?.total ?? '?'} — préparation…`
+                  : `Envoyer tous les canevas (${cards.filter(c => c.sliceResult).length} LTA)`}
+              </Button>
+            )}
             {cards.some(c => c.sliceResult) && !bulkDownloading && (
               <Typography variant="small" className="text-blue-gray-400 text-xs">
                 Enregistre dans Bureau\Canevas\MAWB &lt;réf&gt;\
@@ -711,6 +768,35 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState(null); // { saved, errors }
   const [progress, setProgress] = useState(null); // { done, total }
+  const [emailing, setEmailing] = useState(false);
+  const [savedFolderPath, setSavedFolderPath] = useState(null);
+
+  const handleOpenEmailDraft = async () => {
+    if (!card.sliceResult) return;
+    setEmailing(true);
+    try {
+      // Use individual-save path if available, otherwise fall back to Desktop/Canevas (bulk save location)
+      let folderPath = savedFolderPath;
+      if (!folderPath) {
+        const pathRes = await fetch('http://localhost:3000/lta/desktop-path');
+        const { desktopPath } = await pathRes.json();
+        folderPath = `${desktopPath}\\MAWB ${card.ref}`;
+      }
+      const res = await fetch('http://localhost:3000/lta/open-email-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: card.ref, savedFolderPath: folderPath }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Erreur: ' + (err.error || 'Impossible d\'ouvrir Outlook'));
+      }
+    } catch (e) {
+      alert('Erreur: ' + e.message);
+    } finally {
+      setEmailing(false);
+    }
+  };
 
   const handleDownloadAll = async () => {
     if (!card.sliceResult) return;
@@ -744,7 +830,7 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
       const res = await fetch('http://localhost:3000/lta/generate-and-save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName }),
+        body: JSON.stringify({ sliceResult: card.sliceResult, ref: card.ref, folderPath, manifestSrcPath: card.manifestSrcPath, manifestName: card.manifestName, pdfSrcPath: card.pdfSrcPath, pdfName: card.pdfName }),
       });
       let result = null;
       for await (const event of readSSE(res)) {
@@ -757,6 +843,7 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
         }
       }
       setSaveResult(result);
+      if (result && !result.errors?.length) setSavedFolderPath(folderPath);
     } catch (e) {
       setSaveResult({ saved: [], errors: [{ name: '—', error: e.message }] });
     } finally {
@@ -1001,6 +1088,22 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
                       {saving && progress
                         ? `Sauvegarde… (${progress.done}/${progress.total})`
                         : 'Sauvegarder dans dossier'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      color="blue"
+                      disabled={!card.sliceResult || emailing}
+                      onClick={handleOpenEmailDraft}
+                      className="flex items-center gap-2"
+                    >
+                      {emailing ? (
+                        <Spinner className="h-4 w-4" />
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                      {emailing ? 'Ouverture…' : 'Envoyer par email'}
                     </Button>
                   </div>
 

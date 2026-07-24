@@ -4,6 +4,66 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 26 — Copy MAWB PDF to output folder alongside manifest Excel
+
+### Problem
+"Enregistrer tout — Bureau/Canevas" was copying the manifest Excel from PARTAGE
+but NOT the MAWB PDF file. User wanted the PDF copied too.
+
+### Solution
+Same `fs.copyFileSync` pattern as the manifest:
+- Scan endpoint now also computes and returns `pdfSrcPath` (full disk path to the PDF)
+- `generate-and-save` destructures `pdfSrcPath` + `pdfName`, copies PDF as step 0b
+- Frontend stores `pdfSrcPath` in card state and passes it in both save calls
+
+### Files Modified
+- `tyaybi_back/index.js` — scan returns `pdfSrcPath`; generate-and-save copies PDF
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — card state + both fetch calls
+
+---
+
+## Session 25 — Gestion BDD tab in model_five standalone app
+
+### What was added
+
+Added a full "Gestion de BDD" section to the standalone `model_five` Vite app so
+users can manage the NGP database from their iPad, without accessing the main tyaybi_app.
+
+### Architecture
+
+- **`model_five/server/`** — new Express backend (port 3001) with `bddngp.json`
+  as file-based storage. Routes: GET /data, GET /data/filter, GET /data/filterDuplicates,
+  POST /data, PUT /data/update, DELETE /data/delete, POST /uploadJsonData (Excel import).
+- **`model_five/src/App.jsx`** — rewritten to own a shared Header with tab navigation
+  (Traitement | Gestion BDD) and logout. Model5 and BddNgp are rendered below it.
+- **`model_five/src/BddNgp.jsx`** — mobile-first card list with sticky search bar,
+  filter-duplicates, Excel import, pagination, edit and delete per card, FAB "+" button.
+- **`model_five/src/AddMarchandise.jsx`** / **`UpdateMarchandise.jsx`** — bottom-sheet
+  modals for adding and editing entries.
+- **`model_five/src/api.js`** — fetch wrappers; uses `VITE_API_URL` env var so frontend
+  works against local dev server or a Render deployment.
+- **`model_five/.env.example`** — documents VITE_API_URL for deployment.
+
+### Also fixed
+
+- `model_five/src/Model5.jsx` — removed its own duplicate `<header>` (now App.jsx owns it),
+  removed `onLogout` prop from function signature.
+
+### Files Modified / Created
+
+- `model_five/src/App.jsx` — shared Header with tabs
+- `model_five/src/Model5.jsx` — stripped standalone header
+- `model_five/src/BddNgp.jsx` — new
+- `model_five/src/AddMarchandise.jsx` — new
+- `model_five/src/UpdateMarchandise.jsx` — new
+- `model_five/src/api.js` — new
+- `model_five/server/index.js` — new Express backend
+- `model_five/server/package.json` — new
+- `model_five/server/bddngp.json` — copied from src/bddngp.json
+- `model_five/.env.example` — new
+
+---
+
 ## Session 24 — Model 5 page audit (read-only)
 
 No code changed. Full behaviour documented in TASKS.md.
