@@ -469,6 +469,15 @@ async function supplementCurrencyFretViaVision(pdfBuffer, log = console.log) {
     return { mawbCurrency: null, fretValue: null };
   }
 
+  // Safety net: a real one-page MAWB is small (well under 1 MB). Anything
+  // large is a manifest/multi-page doc that would overflow Gemini's token
+  // limit — skip it rather than burn quota on guaranteed failures.
+  const MAX_PDF_BYTES = 4 * 1024 * 1024; // 4 MB
+  if (pdfBuffer.length > MAX_PDF_BYTES) {
+    log(`[mawb-extract] PDF too large for vision (${(pdfBuffer.length / 1048576).toFixed(1)} MB > 4 MB) — skipping vision fallback`);
+    return { mawbCurrency: null, fretValue: null };
+  }
+
   const client = new genai.GoogleGenAI({ apiKey });
   const pdfBase64 = pdfBuffer.toString("base64");
 
@@ -586,7 +595,15 @@ async function extractMawbMeta(pdfInput, log = console.log) {
   if (!mawbCurrency || !fretValue) {
     log(`[mawb-extract] missing field(s) (currency=${mawbCurrency ?? "null"}, fret=${fretValue ?? "null"}) — trying Gemini Vision`);
     const vision = await supplementCurrencyFretViaVision(buf, log);
-    if (!mawbCurrency && vision.mawbCurrency) mawbCurrency = vision.mawbCurrency;
+    // Vision reads the actual Currency box; the regex only sees pdf-parse's
+    // flattened text and can grab the wrong 3-letter code (e.g. AED before
+    // the real HKD). So when Vision returns a currency, trust it over regex.
+    if (vision.mawbCurrency) {
+      if (mawbCurrency && mawbCurrency !== vision.mawbCurrency) {
+        log(`[mawb-extract] currency override: regex=${mawbCurrency} → vision=${vision.mawbCurrency}`);
+      }
+      mawbCurrency = vision.mawbCurrency;
+    }
     if (!fretValue && vision.fretValue) fretValue = vision.fretValue;
     if (vision.mawbCurrency || vision.fretValue) {
       method = method === "text-extraction" ? "text+vision" : "vision";
@@ -676,7 +693,14 @@ app.post("/lta/scan", async (req, res) => {
     try {
       const files = fs.readdirSync(folderPath);
       const xlsxFile = files.find((f) => /\.(xlsx|xls)$/i.test(f));
-      const pdfFile = files.find((f) => /\.pdf$/i.test(f));
+
+      // Classify PDFs: a "manifest" PDF is the big goods listing; the MAWB
+      // (air waybill) is the one-page form that actually holds currency/fret.
+      const isManifest = (f) => /manifest/i.test(f);
+      const pdfFiles = files.filter((f) => /\.pdf$/i.test(f));
+      const mawbPdf = pdfFiles.find((f) => !isManifest(f)) || null;
+      // For preview/email use the real MAWB if present, otherwise any PDF.
+      const pdfFile = mawbPdf || pdfFiles[0] || null;
 
       const manifestB64 = xlsxFile
         ? fs.readFileSync(path.join(folderPath, xlsxFile)).toString("base64")
@@ -687,26 +711,38 @@ app.post("/lta/scan", async (req, res) => {
         ? fs.readFileSync(path.join(folderPath, pdfFile)).toString("base64")
         : null;
 
-      // Extract currency + fret from PDF (best-effort), logging to console + daily LTA log file
+      // Extract currency + fret — ONLY from a real MAWB air waybill, never the
+      // manifest (huge, and it doesn't contain the air-waybill totals anyway).
       let mawbCurrency = null, fretValue = null;
       const logLines = [];
       const log = (msg) => {
         console.log(msg);
         logLines.push(msg);
       };
-      if (pdfB64) {
-        log(`[mawb-extract] === LTA ${trimmedRef} — extracting from "${pdfFile}" ===`);
+      if (mawbPdf) {
+        const extractB64 = fs.readFileSync(path.join(folderPath, mawbPdf)).toString("base64");
+        log(`[mawb-extract] === LTA ${trimmedRef} — extracting from "${mawbPdf}" ===`);
         try {
-          const meta = await extractMawbMeta(pdfB64, log);
+          const meta = await extractMawbMeta(extractB64, log);
           mawbCurrency = meta.mawbCurrency;
           fretValue = meta.fretValue;
         } catch (e) {
           log(`[mawb-extract] LTA ${trimmedRef} extraction threw: ${e.message}`);
         }
+      } else if (pdfFile) {
+        log(`[mawb-extract] === LTA ${trimmedRef} — only a manifest PDF ("${pdfFile}") found, no MAWB air waybill; skipping extraction (enter fret/devise manually) ===`);
       } else {
         log(`[mawb-extract] === LTA ${trimmedRef} — no PDF found in folder ===`);
       }
       appendLtaLog(trimmedRef, logLines);
+
+      // Warnings so the UI can tell the user why extraction was skipped
+      let warning = null;
+      if (!pdfFile) {
+        warning = "Aucun PDF dans le dossier.";
+      } else if (!mawbPdf) {
+        warning = `Aucun MAWB (LTA) trouvé — seulement le manifeste "${pdfFile}". Saisissez le fret et la devise manuellement.`;
+      }
 
       results.push({
         ref: trimmedRef,
@@ -717,6 +753,8 @@ app.post("/lta/scan", async (req, res) => {
         pdfSrcPath,
         pdfB64,
         pdfName: pdfFile || null,
+        mawbMissing: !mawbPdf,
+        warning,
         mawbCurrency,
         fretValue,
       });
