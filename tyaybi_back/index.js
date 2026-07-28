@@ -1334,22 +1334,24 @@ app.post("/lta/open-email-draft", (req, res) => {
   // Open Outlook in background — no file generation needed
   setImmediate(async () => {
     try {
-      const files = fs.readdirSync(savedFolderPath);
-      const SKIP = new Set(["summary_file.xlsx", "generated_excel.xlsx"]);
-      const attachments = files
-        .filter((f) => {
-          const l = f.toLowerCase();
-          return !SKIP.has(l) && (l.endsWith(".xlsx") || l.endsWith(".pdf"));
-        })
-        .map((f) => path.join(savedFolderPath, f));
+      // Attach EVERY file in the MAWB folder (manifest, MAWB pdf, summary,
+      // generated_excel, and all per-DUM xlsx + pdf) — nothing skipped.
+      const attachments = fs
+        .readdirSync(savedFolderPath, { withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => path.join(savedFolderPath, e.name));
 
       if (!attachments.length) {
         console.error(`[email-draft] no attachments found in ${savedFolderPath}`);
         return;
       }
+      console.log(`[email-draft] attaching ${attachments.length} file(s) for MAWB ${ref}`);
 
       const attachLines = attachments
-        .map((p) => `$mail.Attachments.Add("${p.replace(/\\/g, "\\\\")}") | Out-Null`)
+        .map((p) => {
+          const esc = p.replace(/\\/g, "\\\\").replace(/"/g, '`"');
+          return `try { $mail.Attachments.Add("${esc}") | Out-Null } catch { Write-Host "skip: ${esc}" }`;
+        })
         .join("\n");
 
       const psScript = [
