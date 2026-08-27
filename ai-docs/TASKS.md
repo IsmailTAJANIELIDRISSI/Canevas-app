@@ -1,5 +1,12 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Email draft reuses original acheminement subject — DONE (Session 29)
+
+- `open-email-draft` PS script searches the user's Inbox (recursive DASL Restrict)
+  for the LTA ref (with AND without leading zero), filters to sender TACHRIFY/Abdelhak,
+  and reuses that email's subject for the draft.
+- Falls back to `Canevas de MAWB <ref>` if not found. Covers single + bulk send.
+
 ## ✅ tyaybi_app — Warn on missing manifest Excel — DONE (Session 28)
 
 - Scan flags `manifestMissing` + a warning when an LTA folder has no `.xlsx`

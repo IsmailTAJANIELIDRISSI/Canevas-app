@@ -4,6 +4,31 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 29 — Email draft reuses the original acheminement subject (Outlook COM)
+
+### Problem
+The "Envoyer par email" / "Envoyer tous les canevas" drafts always used the
+subject `Canevas de MAWB <ref>`. The team instead wants the draft to carry the
+**subject of the original acheminement email** that Abdelhak TACHRIFY
+(`abdelhak.tachrify@medafrica-log.com`) sent for that LTA — e.g.
+`3éme Acheminement Express (TM Spdf) DS Combiné###…###`.
+
+### Solution
+Extended the PowerShell Outlook COM automation in `POST /lta/open-email-draft`:
+- Before setting the subject, it searches the current user's **Inbox (recursively)**
+  via a DASL `Restrict` on `urn:schemas:httpmail:subject` for the LTA ref, trying
+  **both** the ref as-is (`072-…`) and with the leading zero stripped (`72-…`).
+- Among matches it picks the one whose sender is TACHRIFY / Abdelhak and reuses
+  that email's `Subject` for the draft.
+- Falls back to `Canevas de MAWB <ref>` when nothing matches.
+- Applies to both single and bulk send (both call this endpoint).
+
+### Files Modified
+- `tyaybi_back/index.js` — `open-email-draft`: mailbox subject lookup in the
+  generated `.ps1` (ref-with/without-leading-zero + sender filter + fallback)
+
+---
+
 ## Session 28 — Warn when an LTA folder has no manifest Excel
 
 ### Problem

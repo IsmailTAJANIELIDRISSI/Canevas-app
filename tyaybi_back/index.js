@@ -1364,11 +1364,41 @@ app.post("/lta/open-email-draft", (req, res) => {
         })
         .join("\n");
 
+      // Ref variants to search the mailbox with: with and without leading zero
+      const refZero = ref;                       // e.g. 072-74366504
+      const refNoZero = ref.replace(/^0+/, "");  // e.g. 72-74366504
+
       const psScript = [
         `$outlook = New-Object -ComObject Outlook.Application`,
+        `$ns = $outlook.GetNamespace("MAPI")`,
         `$mail = $outlook.CreateItem(0)`,
         `$mail.To = "${EMAIL_TO}"`,
-        `$mail.Subject = "Canevas de MAWB ${ref}"`,
+        ``,
+        `# Find the original "acheminement" email from Abdelhak TACHRIFY for this LTA`,
+        `# and reuse its subject; fall back to "Canevas de MAWB <ref>".`,
+        `$script:subjectFound = $null`,
+        `function Find-Achem($folder) {`,
+        `  if ($script:subjectFound) { return }`,
+        `  try {`,
+        `    $items = $folder.Items`,
+        `    try { $items.Sort("[ReceivedTime]", $true) } catch {}`,
+        `    $res = $items.Restrict("@SQL=(urn:schemas:httpmail:subject LIKE '%${refZero}%' OR urn:schemas:httpmail:subject LIKE '%${refNoZero}%')")`,
+        `    foreach ($m in $res) {`,
+        `      try {`,
+        `        if (($m.SenderName -like '*tachrify*') -or ($m.SenderName -like '*abdelhak*') -or ($m.SenderEmailAddress -like '*tachrify*')) {`,
+        `          $script:subjectFound = $m.Subject`,
+        `          break`,
+        `        }`,
+        `      } catch {}`,
+        `    }`,
+        `  } catch {}`,
+        `  if (-not $script:subjectFound) {`,
+        `    foreach ($sub in $folder.Folders) { Find-Achem $sub; if ($script:subjectFound) { break } }`,
+        `  }`,
+        `}`,
+        `try { Find-Achem $ns.GetDefaultFolder(6) } catch {}`,
+        `if ($script:subjectFound) { $mail.Subject = $script:subjectFound } else { $mail.Subject = "Canevas de MAWB ${ref}" }`,
+        ``,
         attachLines,
         `$mail.Display()`,
       ].join("\n");
