@@ -22,10 +22,16 @@ Extended the PowerShell Outlook COM automation in `POST /lta/open-email-draft`:
   that email's `Subject` for the draft.
 - Falls back to `Canevas de MAWB <ref>` when nothing matches.
 - Applies to both single and bulk send (both call this endpoint).
+- **Logging**: the PS script now `Write-Host`s every step (variants searched,
+  each subject-match with folder+sender+subject, folders-scanned/match counts,
+  final subject). Node captures the PS stdout/stderr and writes it to the
+  console **and** the daily LTA log via `appendLtaLog`, so an empty result is
+  diagnosable (wrong folder / subject format / sender mismatch).
 
 ### Files Modified
 - `tyaybi_back/index.js` — `open-email-draft`: mailbox subject lookup in the
-  generated `.ps1` (ref-with/without-leading-zero + sender filter + fallback)
+  generated `.ps1` (ref-with/without-leading-zero + sender filter + fallback),
+  plus full search logging captured from PowerShell output
 
 ---
 

@@ -1369,6 +1369,8 @@ app.post("/lta/open-email-draft", (req, res) => {
       const refNoZero = ref.replace(/^0+/, "");  // e.g. 72-74366504
 
       const psScript = [
+        `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`,
+        `Write-Host "[email-draft] LTA ${ref} — searching mailbox (variants: '${refZero}', '${refNoZero}')"`,
         `$outlook = New-Object -ComObject Outlook.Application`,
         `$ns = $outlook.GetNamespace("MAPI")`,
         `$mail = $outlook.CreateItem(0)`,
@@ -1377,36 +1379,51 @@ app.post("/lta/open-email-draft", (req, res) => {
         `# Find the original "acheminement" email from Abdelhak TACHRIFY for this LTA`,
         `# and reuse its subject; fall back to "Canevas de MAWB <ref>".`,
         `$script:subjectFound = $null`,
+        `$script:foldersScanned = 0`,
+        `$script:subjMatches = 0`,
         `function Find-Achem($folder) {`,
         `  if ($script:subjectFound) { return }`,
+        `  $script:foldersScanned++`,
         `  try {`,
         `    $items = $folder.Items`,
         `    try { $items.Sort("[ReceivedTime]", $true) } catch {}`,
         `    $res = $items.Restrict("@SQL=(urn:schemas:httpmail:subject LIKE '%${refZero}%' OR urn:schemas:httpmail:subject LIKE '%${refNoZero}%')")`,
         `    foreach ($m in $res) {`,
         `      try {`,
+        `        $script:subjMatches++`,
+        `        Write-Host ("[email-draft]   subject-match in '" + $folder.Name + "' | from='" + $m.SenderName + "' | subj='" + $m.Subject + "'")`,
         `        if (($m.SenderName -like '*tachrify*') -or ($m.SenderName -like '*abdelhak*') -or ($m.SenderEmailAddress -like '*tachrify*')) {`,
         `          $script:subjectFound = $m.Subject`,
+        `          Write-Host "[email-draft]   >>> sender matched TACHRIFY — using this subject"`,
         `          break`,
         `        }`,
         `      } catch {}`,
         `    }`,
-        `  } catch {}`,
+        `  } catch { Write-Host ("[email-draft]   (skip folder '" + $folder.Name + "': " + $_.Exception.Message + ")") }`,
         `  if (-not $script:subjectFound) {`,
         `    foreach ($sub in $folder.Folders) { Find-Achem $sub; if ($script:subjectFound) { break } }`,
         `  }`,
         `}`,
-        `try { Find-Achem $ns.GetDefaultFolder(6) } catch {}`,
-        `if ($script:subjectFound) { $mail.Subject = $script:subjectFound } else { $mail.Subject = "Canevas de MAWB ${ref}" }`,
+        `try { Find-Achem $ns.GetDefaultFolder(6) } catch { Write-Host ("[email-draft] search error: " + $_.Exception.Message) }`,
+        `Write-Host ("[email-draft] scanned " + $script:foldersScanned + " folder(s), " + $script:subjMatches + " subject-match(es)")`,
+        `if ($script:subjectFound) { $mail.Subject = $script:subjectFound; Write-Host ("[email-draft] FINAL subject (from mail): " + $mail.Subject) } else { $mail.Subject = "Canevas de MAWB ${ref}"; Write-Host "[email-draft] FINAL subject (fallback): Canevas de MAWB ${ref}" }`,
         ``,
         attachLines,
         `$mail.Display()`,
+        `Write-Host "[email-draft] draft displayed"`,
       ].join("\n");
 
       const scriptPath = path.join(os.tmpdir(), `open_draft_${ref}_${Date.now()}.ps1`);
       fs.writeFileSync(scriptPath, psScript, "utf8");
 
-      exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, () => {
+      exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (err, stdout, stderr) => {
+        const out = [];
+        if (stdout && stdout.trim()) out.push(stdout.trim());
+        if (stderr && stderr.trim()) out.push("[stderr] " + stderr.trim());
+        if (err) out.push("[exec error] " + err.message);
+        const text = out.join("\n");
+        if (text) console.log(text);
+        appendLtaLog(ref, [`[email-draft] === LTA ${ref} — open draft ===`, text || "(no PowerShell output)"]);
         setTimeout(() => { try { fs.unlinkSync(scriptPath); } catch {} }, 15000);
       });
     } catch (e) {
