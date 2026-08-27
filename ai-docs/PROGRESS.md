@@ -28,10 +28,20 @@ Extended the PowerShell Outlook COM automation in `POST /lta/open-email-draft`:
   console **and** the daily LTA log via `appendLtaLog`, so an empty result is
   diagnosable (wrong folder / subject format / sender mismatch).
 
+### Bug found via logging — .ps1 encoding
+The captured PS output showed the script **failed to parse entirely**
+(`L'opérateur «<» est réservé…`, unexpected `}` tokens). Root cause: the file
+was written as **BOM-less UTF-8**, which Windows PowerShell 5.1 reads as ANSI
+(cp1252) — mangling em-dashes/accents into characters PS treated as string
+delimiters. Fix: write the `.ps1` with a **UTF-8 BOM**
+(`String.fromCharCode(0xFEFF) + psScript`) so PS reads it as UTF-8, and keep the
+generated script **pure ASCII** (no em-dashes/`>>>`/`<ref>`). This also fixes
+accented attachment paths (e.g. `C:\Users\Nouhaila\…`).
+
 ### Files Modified
 - `tyaybi_back/index.js` — `open-email-draft`: mailbox subject lookup in the
   generated `.ps1` (ref-with/without-leading-zero + sender filter + fallback),
-  plus full search logging captured from PowerShell output
+  full search logging captured from PowerShell output, and UTF-8-BOM/ASCII fix
 
 ---
 

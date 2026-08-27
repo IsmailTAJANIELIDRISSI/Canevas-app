@@ -1370,14 +1370,14 @@ app.post("/lta/open-email-draft", (req, res) => {
 
       const psScript = [
         `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`,
-        `Write-Host "[email-draft] LTA ${ref} — searching mailbox (variants: '${refZero}', '${refNoZero}')"`,
+        `Write-Host "[email-draft] LTA ${ref} - searching mailbox (variants: '${refZero}', '${refNoZero}')"`,
         `$outlook = New-Object -ComObject Outlook.Application`,
         `$ns = $outlook.GetNamespace("MAPI")`,
         `$mail = $outlook.CreateItem(0)`,
         `$mail.To = "${EMAIL_TO}"`,
         ``,
-        `# Find the original "acheminement" email from Abdelhak TACHRIFY for this LTA`,
-        `# and reuse its subject; fall back to "Canevas de MAWB <ref>".`,
+        `# Find the original acheminement email from Abdelhak TACHRIFY for this LTA`,
+        `# and reuse its subject; fall back to Canevas de MAWB ref.`,
         `$script:subjectFound = $null`,
         `$script:foldersScanned = 0`,
         `$script:subjMatches = 0`,
@@ -1394,7 +1394,7 @@ app.post("/lta/open-email-draft", (req, res) => {
         `        Write-Host ("[email-draft]   subject-match in '" + $folder.Name + "' | from='" + $m.SenderName + "' | subj='" + $m.Subject + "'")`,
         `        if (($m.SenderName -like '*tachrify*') -or ($m.SenderName -like '*abdelhak*') -or ($m.SenderEmailAddress -like '*tachrify*')) {`,
         `          $script:subjectFound = $m.Subject`,
-        `          Write-Host "[email-draft]   >>> sender matched TACHRIFY — using this subject"`,
+        `          Write-Host "[email-draft]   MATCH: sender matched TACHRIFY - using this subject"`,
         `          break`,
         `        }`,
         `      } catch {}`,
@@ -1414,7 +1414,9 @@ app.post("/lta/open-email-draft", (req, res) => {
       ].join("\n");
 
       const scriptPath = path.join(os.tmpdir(), `open_draft_${ref}_${Date.now()}.ps1`);
-      fs.writeFileSync(scriptPath, psScript, "utf8");
+      // UTF-8 BOM: Windows PowerShell 5.1 reads BOM-less files as ANSI (cp1252),
+      // which mangles any non-ASCII (accented paths, em-dashes) and breaks parsing.
+      fs.writeFileSync(scriptPath, String.fromCharCode(0xFEFF) + psScript, "utf8");
 
       exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (err, stdout, stderr) => {
         const out = [];
