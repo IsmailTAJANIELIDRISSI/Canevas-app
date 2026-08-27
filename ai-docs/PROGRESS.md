@@ -4,6 +4,55 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 28 — Warn when an LTA folder has no manifest Excel
+
+### Problem
+Typing ref `235-96139083` returned a card with no feedback: the folder had a
+MAWB PDF but **no manifest Excel (.xlsx)**. The DUM slicing needs the manifest,
+so the LTA silently can't be processed with no explanation.
+
+### Solution
+- Scan endpoint now collects warnings in an array and adds a **critical** warning
+  when `xlsxFile` is missing (`manifestMissing: true`), alongside the existing
+  MAWB-PDF warnings. Multiple issues are joined into one message.
+- Frontend card shows the warning banner in **red** (critical) when the manifest
+  is missing, **amber** otherwise, with a matching label
+  ("Manifeste manquant." vs "PDF MAWB manquant.").
+
+### Files Modified
+- `tyaybi_back/index.js` — scan: warnings[] + `manifestMissing` flag
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — card state,
+  scan mapping, red/amber warning banner
+
+---
+
+## Session 27 — Gestion BDD: backup download + JSON sync (model_five / Supabase)
+
+### What was added
+Two features in the model_five "Gestion BDD" tab (now backed by Supabase, not the
+old Express `bddngp.json`):
+
+1. **💾 Télécharger la base** — downloads the entire NGP database as a JSON backup
+   named `bddngp-YYYY-MM-DD.json`, in the `{ "Feuil1": [...] }` shape (internal `id`
+   stripped) so a backup can be fed straight back into "Synchroniser".
+2. **🔄 Synchroniser la base** — user picks a JSON file (e.g. `docs/bddngp.json`);
+   the app persists **only elements not already present**. Existing rows (matched on
+   normalized designation + code) are skipped; the toast reports added / already-present
+   / invalid counts.
+
+### Implementation
+- New serverless endpoint `api/data/sync.js`: loads all existing keys via `fetchAll`,
+  filters incoming items to new + valid + batch-deduplicated, bulk-inserts in chunks of
+  500. Dedup key = `designation.toLowerCase().trim() + '|||' + code` (same as everywhere).
+- `BddNgp.jsx`: `handleDownloadDb` (client-side blob download) and `handleSync` (parse
+  JSON file → POST `/data/sync`), plus two buttons in the filter bar.
+
+### Files Modified
+- `model_five/api/data/sync.js` — new endpoint (insert-only-new)
+- `model_five/src/BddNgp.jsx` — download + sync handlers, two buttons, state/refs
+
+---
+
 ## Session 26 — Copy MAWB PDF to output folder alongside manifest Excel
 
 ### Problem

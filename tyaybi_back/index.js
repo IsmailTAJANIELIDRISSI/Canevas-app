@@ -736,13 +736,22 @@ app.post("/lta/scan", async (req, res) => {
       }
       appendLtaLog(trimmedRef, logLines);
 
-      // Warnings so the UI can tell the user why extraction was skipped
-      let warning = null;
-      if (!pdfFile) {
-        warning = "Aucun PDF dans le dossier.";
-      } else if (!mawbPdf) {
-        warning = `Aucun MAWB (LTA) trouvé — seulement le manifeste "${pdfFile}". Saisissez le fret et la devise manuellement.`;
+      // Warnings so the UI can tell the user what's missing
+      const warnings = [];
+      // Missing manifest Excel is critical — the DUM slicing needs it.
+      if (!xlsxFile) {
+        warnings.push(
+          `Aucun manifeste Excel (.xlsx) dans le dossier${mawbPdf ? " (le MAWB PDF existe)" : ""}. Le découpage est impossible sans le manifeste.`,
+        );
       }
+      if (!pdfFile) {
+        warnings.push("Aucun PDF dans le dossier.");
+      } else if (!mawbPdf) {
+        warnings.push(
+          `Aucun MAWB (LTA) trouvé — seulement le manifeste "${pdfFile}". Saisissez le fret et la devise manuellement.`,
+        );
+      }
+      const warning = warnings.length ? warnings.join(" ") : null;
 
       results.push({
         ref: trimmedRef,
@@ -750,6 +759,7 @@ app.post("/lta/scan", async (req, res) => {
         manifestB64,
         manifestName: xlsxFile || null,
         manifestSrcPath,
+        manifestMissing: !xlsxFile,
         pdfSrcPath,
         pdfB64,
         pdfName: pdfFile || null,

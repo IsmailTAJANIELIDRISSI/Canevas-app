@@ -396,6 +396,7 @@ function makeCard(ref) {
     sliceResult: null,
     error: null,
     warning: null,
+    manifestMissing: false,
     blocage: false,
     blocageUsdRate: '',
     blocageHawbs: '',
@@ -553,6 +554,7 @@ export default function Acheminements() {
           currency: extractedCurrency,
           fret: extractedFret,
           warning: r.warning || null,
+          manifestMissing: r.manifestMissing || false,
         };
       });
 
@@ -899,11 +901,17 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
         )}
 
         {card.warning && (
-          <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 border border-amber-300">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+          <div className={`flex items-start gap-2 rounded-lg p-3 text-sm border ${
+            card.manifestMissing
+              ? 'bg-red-50 text-red-800 border-red-300'
+              : 'bg-amber-50 text-amber-800 border-amber-300'
+          }`}>
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 flex-shrink-0 ${card.manifestMissing ? 'text-red-500' : 'text-amber-500'}`} viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
-            <span><strong>PDF MAWB manquant.</strong> {card.warning}</span>
+            <span>
+              <strong>{card.manifestMissing ? 'Manifeste manquant.' : 'PDF MAWB manquant.'}</strong> {card.warning}
+            </span>
           </div>
         )}
 

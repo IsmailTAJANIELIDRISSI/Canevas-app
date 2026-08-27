@@ -1,5 +1,20 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Warn on missing manifest Excel — DONE (Session 28)
+
+- Scan flags `manifestMissing` + a warning when an LTA folder has no `.xlsx`
+  manifest (even if the MAWB PDF exists). DUM slicing needs the manifest.
+- Card shows a red banner ("Manifeste manquant.") for this critical case,
+  amber ("PDF MAWB manquant.") for MAWB-PDF-only issues.
+
+## ✅ model_five — BDD backup + JSON sync — DONE (Session 27)
+
+- **💾 Télécharger la base** — downloads full DB as `bddngp-YYYY-MM-DD.json`
+  (`{ Feuil1: [...] }` shape, `id` stripped) for backup / re-sync.
+- **🔄 Synchroniser la base** — upload a JSON file; inserts **only** rows not already
+  present (dedup by normalized designation + code). Toast reports added/present/invalid.
+- Backend now Supabase-based (`api/data/sync.js`, endpoint `POST /data/sync`).
+
 ## ✅ model_five — Gestion BDD tab + Express backend — DONE (Session 25)
 
 - Tab navigation (Traitement | Gestion BDD) owned by shared Header in App.jsx
