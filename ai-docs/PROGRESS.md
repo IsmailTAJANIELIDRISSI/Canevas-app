@@ -36,6 +36,16 @@ Searches the current user's **Inbox (recursively)**:
   console **and** the daily LTA log via `appendLtaLog`, so an empty result is
   diagnosable (wrong folder / subject format / sender mismatch).
 
+### Follow-up — Display() COM crash on temp/lock files
+Intermittent `$mail.Display()` failure: `Index de la matrice en dehors des
+limites` (array index out of bounds, COMException). Cause: the folder sometimes
+contains an Excel **lock/temp file** (`~.xlsx`, `~$foo.xlsx`) when a DUM is open;
+`Attachments.Add` fails on it and destabilizes the draft. Fixes:
+- Node attachment list now skips `~*` and dotfiles (never attach lock files).
+- PS now `$mail.Save()`s first, wraps `Display()` in try/catch, retries once via
+  `$mail.GetInspector.Display()` after 800ms; the draft is saved to Drafts either
+  way so it's never lost.
+
 ### Bug found via logging — .ps1 encoding
 The captured PS output showed the script **failed to parse entirely**
 (`L'opérateur «<» est réservé…`, unexpected `}` tokens). Root cause: the file

@@ -1344,11 +1344,12 @@ app.post("/lta/open-email-draft", (req, res) => {
   // Open Outlook in background — no file generation needed
   setImmediate(async () => {
     try {
-      // Attach EVERY file in the MAWB folder (manifest, MAWB pdf, summary,
-      // generated_excel, and all per-DUM xlsx + pdf) — nothing skipped.
+      // Attach every real file in the MAWB folder, but skip Office temp/lock
+      // files (~$foo.xlsx, ~.xlsx) and dotfiles - those can't be attached and
+      // a failed Attachments.Add can destabilize the draft (Display crash).
       const attachments = fs
         .readdirSync(savedFolderPath, { withFileTypes: true })
-        .filter((e) => e.isFile())
+        .filter((e) => e.isFile() && !/^~/.test(e.name) && !e.name.startsWith("."))
         .map((e) => path.join(savedFolderPath, e.name));
 
       if (!attachments.length) {
@@ -1429,8 +1430,20 @@ app.post("/lta/open-email-draft", (req, res) => {
         `}`,
         ``,
         attachLines,
-        `$mail.Display()`,
-        `Write-Host "[email-draft] draft displayed"`,
+        `try { $mail.Save() } catch {}`,
+        `try {`,
+        `  $mail.Display()`,
+        `  Write-Host "[email-draft] draft displayed"`,
+        `} catch {`,
+        `  Write-Host ("[email-draft] Display failed once: " + $_.Exception.Message + " - retrying via inspector")`,
+        `  Start-Sleep -Milliseconds 800`,
+        `  try {`,
+        `    $mail.GetInspector.Display()`,
+        `    Write-Host "[email-draft] draft displayed (inspector retry)"`,
+        `  } catch {`,
+        `    Write-Host ("[email-draft] Display failed again: " + $_.Exception.Message + " - draft saved to Drafts")`,
+        `  }`,
+        `}`,
       ].join("\n");
 
       const scriptPath = path.join(os.tmpdir(), `open_draft_${ref}_${Date.now()}.ps1`);
