@@ -1,5 +1,17 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Manifest validation before slicing — DONE (Session 30)
+
+- `validateManifest.js` runs before `sliceManifest` in `handleExecute`.
+- BLOCKED → red panel, no DUM generation; WARNING → amber panel + explicit
+  confirm button; PASS → auto-proceed.
+- Catches: positions/pcs count mismatch, header/structure errors, data truncation,
+  bad field types, duplicates, inconsistencies.
+- ⚠️ Verify against a known-good manifest — if `structure_shifted` fires wrongly,
+  adjust `HEADER_ROW` (repo sample 607 has headers at row 4, not row 5).
+- ⚠️ Committed+pushed to `ismail` because `Tyaybi_app.bat` hard-resets to
+  origin/ismail on launch (wiped the first, uncommitted attempt).
+
 ## ✅ tyaybi_app — Email draft reuses original acheminement subject — DONE (Session 29)
 
 - `open-email-draft` PS script searches the user's Inbox (recursive DASL Restrict)

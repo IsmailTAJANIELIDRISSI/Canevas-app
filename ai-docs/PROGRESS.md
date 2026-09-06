@@ -4,6 +4,48 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 30 — Manifest validation step before DUM slicing
+
+### Problem
+Corrupted/malformed manifests were sliced silently, producing wrong DUMs — e.g.
+a manifest whose row-3 "Positions" count didn't match the real number of waybills
+went through unnoticed.
+
+> ⚠️ First attempt was lost: the changes were uncommitted and `Tyaybi_app.bat`'s
+> `git reset --hard origin/ismail` + `git clean -fd` wiped them on next launch.
+> Re-implemented and committed/pushed to `ismail` this time.
+
+### Solution
+New pre-slice validator `tyaybi_front/src/utils/validateManifest.js` returning
+`{ status: PASS|WARNING|BLOCKED, file, summary, issues[] }`:
+- **Structural (BLOCKER)**: detects the header row (searches rows 3–6); the slicer
+  requires it at row 5 (index 4) — if elsewhere, one clear `structure_shifted`
+  message. MAWB/Pcs/Positions metadata lines; exact 13-column header match; data
+  truncation (slicer stops at first non-mad/usd currency — flags real data dropped
+  after the stop; a lone trailing terminator is NOT flagged).
+- **Cross-consistency (BLOCKER)**: declared Positions == distinct Waybills;
+  declared Pcs == distinct "Carton or bag N°".
+- **Field-level (aggregated, WARNING; escalates to BLOCKER if >10% of rows)**:
+  Pieces int>0, Value/Weight num>0, hs Code 10 digits, Phone 9–10 digits, required
+  non-null fields, ambiguous-comma numbers, per-row currency.
+- **WARNING**: duplicate rows, within-waybill inconsistency, weight-sum sanity.
+
+Integration in `handleExecute`: validate before slicing. BLOCKED → red panel, no
+generation. WARNING → amber panel + explicit "continuer quand même" button.
+PASS → slice automatically.
+
+### Files Modified
+- `tyaybi_front/src/utils/validateManifest.js` — new validator
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — validate in
+  handleExecute, `ManifestValidationPanel`, card `validation` state, confirm flow
+
+### ⚠️ To verify
+Test with a manifest that CURRENTLY slices correctly. If it flags
+`structure_shifted`, the real header row isn't index 4 → adjust `HEADER_ROW`
+(repo sample 607-52839835 has headers at row 4).
+
+---
+
 ## Session 29 — Email draft reuses the original acheminement subject (Outlook COM)
 
 ### Problem

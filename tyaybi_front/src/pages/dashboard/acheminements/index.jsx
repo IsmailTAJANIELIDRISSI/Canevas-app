@@ -14,6 +14,7 @@ import { saveAs } from 'file-saver';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { sliceManifest } from '@/utils/sliceManifest';
+import { validateManifest } from '@/utils/validateManifest';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -397,6 +398,7 @@ function makeCard(ref) {
     error: null,
     warning: null,
     manifestMissing: false,
+    validation: null,
     blocage: false,
     blocageUsdRate: '',
     blocageHawbs: '',
@@ -617,7 +619,7 @@ export default function Acheminements() {
     }
   };
 
-  const handleExecute = async (card) => {
+  const handleExecute = async (card, skipValidation = false) => {
     if (!card.manifestB64) return;
     if (!card.madValue && card.madValue !== 0) {
       return alert('Veuillez entrer la valeur Fret et attendre le taux de change.');
@@ -629,10 +631,27 @@ export default function Acheminements() {
       }
     }
 
+    const bytes = Uint8Array.from(atob(card.manifestB64), c => c.charCodeAt(0));
+
+    // ── Validate the manifest structure/data BEFORE slicing ──────────────────
+    if (!skipValidation) {
+      let validation;
+      try {
+        validation = validateManifest(bytes.buffer, card.manifestName || `MAWB ${card.ref}`);
+      } catch (e) {
+        validation = { status: 'BLOCKED', file: card.ref, summary: {}, issues: [{ severity: 'BLOCKER', check: 'validator_error', message: `Erreur de validation : ${e.message}` }] };
+      }
+      // BLOCKED → don't slice; WARNING → wait for explicit confirmation
+      if (validation.status === 'BLOCKED' || validation.status === 'WARNING') {
+        updateCard(card.ref, { status: 'ready', validation });
+        return;
+      }
+      updateCard(card.ref, { validation }); // PASS
+    }
+
     updateCard(card.ref, { status: 'processing', error: null });
 
     try {
-      const bytes = Uint8Array.from(atob(card.manifestB64), c => c.charCodeAt(0));
       const exclusionWaybills = card.blocage
         ? card.blocageHawbs.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
         : [];
@@ -704,6 +723,7 @@ export default function Acheminements() {
           onCurrencyChange={(cur) => handleCurrencyChange(card.ref, cur, card.fret)}
           onBlocageChange={(patch) => updateCard(card.ref, patch)}
           onExecute={() => handleExecute(card)}
+          onConfirmWarnings={() => handleExecute(card, true)}
         />
       ))}
 
@@ -766,7 +786,59 @@ export default function Acheminements() {
 
 // ─── LTA Card sub-component ───────────────────────────────────────────────────
 
-function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageChange, partagePath }) {
+function ManifestValidationPanel({ validation, onConfirm }) {
+  const { status, summary, issues } = validation;
+  const blocked = status === 'BLOCKED';
+
+  return (
+    <div className={`rounded-lg border p-3 text-sm ${blocked ? 'bg-red-50 border-red-300 text-red-800' : 'bg-amber-50 border-amber-300 text-amber-900'}`}>
+      <div className="flex items-center gap-2 font-semibold mb-1">
+        <span>{blocked ? '❌' : '⚠️'}</span>
+        <span>
+          {blocked
+            ? `Ce manifeste ne peut pas être traité — ${issues.length} problème(s) détecté(s)`
+            : `${issues.length} avertissement(s) à vérifier avant de continuer`}
+        </span>
+      </div>
+
+      {summary && (
+        <div className="text-xs opacity-80 mb-2">
+          {summary.data_rows != null && <>Lignes de données : <b>{summary.data_rows}</b>. </>}
+          {summary.declared_positions != null && summary.actual_distinct_waybills != null && (
+            <>Positions déclarées : <b>{summary.declared_positions}</b> / LTA distinctes : <b>{summary.actual_distinct_waybills}</b>. </>
+          )}
+          {summary.declared_pcs != null && summary.actual_distinct_cartons != null && (
+            <>Pcs déclarés : <b>{summary.declared_pcs}</b> / cartons distincts : <b>{summary.actual_distinct_cartons}</b>.</>
+          )}
+        </div>
+      )}
+
+      <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+        {issues.map((it, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <span className={`mt-0.5 shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${it.severity === 'BLOCKER' ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-900'}`}>
+              {it.severity === 'BLOCKER' ? 'BLOQUANT' : 'AVERT.'}
+            </span>
+            <span className="leading-snug">{it.message}</span>
+          </li>
+        ))}
+      </ul>
+
+      {blocked ? (
+        <p className="mt-2 text-xs font-medium">Corrigez le manifeste à la source, puis relancez le scan.</p>
+      ) : (
+        <button
+          onClick={onConfirm}
+          className="mt-3 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition"
+        >
+          J'ai vérifié les avertissements — continuer quand même
+        </button>
+      )}
+    </div>
+  );
+}
+
+function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageChange, onConfirmWarnings, partagePath }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadingIdx, setDownloadingIdx] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1027,6 +1099,14 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
                 )}
               </div>
 
+              {/* Manifest validation result */}
+              {card.validation && card.validation.status !== 'PASS' && card.status !== 'done' && (
+                <ManifestValidationPanel
+                  validation={card.validation}
+                  onConfirm={onConfirmWarnings}
+                />
+              )}
+
               {/* Execute button */}
               {card.status !== 'done' && (
                 <Button
@@ -1037,7 +1117,11 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
                   className="flex items-center gap-2 w-fit"
                 >
                   {card.status === 'processing' && <Spinner className="h-4 w-4" />}
-                  {card.status === 'processing' ? 'Traitement...' : 'Exécuter le découpage'}
+                  {card.status === 'processing'
+                    ? 'Traitement...'
+                    : card.validation?.status === 'BLOCKED'
+                    ? 'Revalider le découpage'
+                    : 'Exécuter le découpage'}
                 </Button>
               )}
 
