@@ -36,3 +36,6 @@ Thumbs.db
 
 # Separate standalone project — has its own repo
 model_five/
+
+# Local dev launcher (starts servers without the git hard-reset) — dev machine only
+Tyaybi_dev.bat
