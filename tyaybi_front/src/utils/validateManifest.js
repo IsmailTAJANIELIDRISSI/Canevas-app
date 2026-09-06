@@ -82,11 +82,16 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     declaredPositions = parseInt(posMatch[1], 10);
   }
 
+  // Headers are compared after normalization: collapse internal whitespace runs
+  // and ignore case, so " Pieces " / "PIECES" / "hs  code" are accepted as-is.
+  const normH = (s) => str(s).replace(/\s+/g, ' ').toLowerCase();
+  const EXPECTED_NORM = EXPECTED_HEADERS.map(normH);
+
   // ── A. Locate the header row (must be row 5 for the slicer) ─────────────────
   let headerIdx = -1;
   for (let i = 2; i <= Math.min(6, jsonData.length - 1); i++) {
-    const r = (jsonData[i] || []).map(str);
-    if (r.includes('Waybill Number') && (r.includes('Description of Goods') || r.includes('Currency'))) {
+    const r = (jsonData[i] || []).map(normH);
+    if (r.includes('waybill number') && (r.includes('description of goods') || r.includes('currency'))) {
       headerIdx = i;
       break;
     }
@@ -104,14 +109,24 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
       headerIdx + 1);
   }
 
+  // ── A. Header columns — normalized comparison, per-cell messages ────────────
   const headerRow = (jsonData[headerIdx] || []).map((c) => str(c));
   let columnsOk = true;
   for (let c = 0; c < EXPECTED_HEADERS.length; c++) {
-    if (headerRow[c] !== EXPECTED_HEADERS[c]) {
+    if (normH(headerRow[c]) !== EXPECTED_NORM[c]) {
       columnsOk = false;
+      const cell = `${colLetter(c)}${headerIdx + 1}`;
       add('BLOCKER', 'header_mismatch',
-        `En-tête colonne ${c + 1} (ligne ${headerIdx + 1}) : attendu « ${EXPECTED_HEADERS[c]} », trouvé « ${headerRow[c] || '(vide)'} ». Colonne manquante, renommée ou décalée.`,
-        headerIdx + 1, String.fromCharCode(65 + c));
+        `Cellule ${cell} : attendu « ${EXPECTED_HEADERS[c]} », trouvé « ${headerRow[c] || '(vide)'} ». Colonne manquante, renommée, décalée ou dans le mauvais ordre.`,
+        headerIdx + 1, colLetter(c));
+    }
+  }
+  // Unexpected non-empty columns beyond the 13 expected (WARNING — likely ignored)
+  for (let c = EXPECTED_HEADERS.length; c < headerRow.length; c++) {
+    if (str(headerRow[c])) {
+      add('WARNING', 'extra_column',
+        `Cellule ${colLetter(c)}${headerIdx + 1} : colonne supplémentaire inattendue « ${headerRow[c]} » (au-delà de « hs Code »).`,
+        headerIdx + 1, colLetter(c));
     }
   }
 
@@ -273,6 +288,18 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
+
+// 0-based column index → spreadsheet letter (0→A, 25→Z, 26→AA, …)
+function colLetter(c) {
+  let s = '';
+  let n = c + 1;
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
 
 function toNum(v) {
   if (v == null || v === '') return null;

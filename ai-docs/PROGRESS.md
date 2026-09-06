@@ -39,6 +39,16 @@ PASS → slice automatically.
 - `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — validate in
   handleExecute, `ManifestValidationPanel`, card `validation` state, confirm flow
 
+### Follow-up — normalized header comparison + per-cell errors
+Header check was exact-string, so a valid manifest differing only by case/spacing
+was wrongly blocked (and unhandled paths could crash the slicer). Now:
+- Headers compared after normalization (`replace(/\s+/g,' ').toLowerCase()`), so
+  `" Pieces "`, `"PIECES"`, `"hs  code"` all pass.
+- On real mismatch (missing/renamed/reordered) each bad column reports its exact
+  cell: `Cellule D5 : attendu « Pieces », trouvé « Value ».` — never crashes.
+- Non-empty columns beyond the 13 expected → WARNING (`extra_column`), not a block.
+- Header-row detection also normalized. Added `colLetter()` (0→A … 26→AA).
+
 ### ⚠️ To verify
 Test with a manifest that CURRENTLY slices correctly. If it flags
 `structure_shifted`, the real header row isn't index 4 → adjust `HEADER_ROW`
