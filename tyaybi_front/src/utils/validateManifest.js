@@ -29,7 +29,6 @@ const MAX_EXAMPLES = 6; // cap examples per aggregated check to keep the UI read
 
 const str = (v) => (v == null ? '' : String(v).trim());
 const isBlankRow = (row) => !row || row.every((c) => str(c) === '');
-const hasAmbiguousComma = (v) => typeof v === 'string' && /,/.test(v.trim());
 
 export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   const issues = [];
@@ -182,6 +181,7 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   const bucket = {};
   const flag = (check, row, found) => { (bucket[check] ||= []).push({ row, found }); };
 
+  const malformed = []; // {cell, label, raw} — genuinely illegible numeric cells
   const dupRows = [];
   const wbInconsistent = new Set();
 
@@ -202,9 +202,12 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     const desc = str(row[COL.desc]);
     if (!desc) flag('desc_empty', rn, '(vide)');
 
-    checkPositiveInt(row[COL.pieces], rn, 'pieces_invalid', flag);
-    checkPositiveNum(row[COL.value], rn, 'value_invalid', flag);
-    checkPositiveNum(row[COL.weight], rn, 'weight_invalid', flag);
+    // Numeric cells: genuinely malformed values (garbage like "#*****", or
+    // multi-separator like "11,5,451145") → collected for a hard BLOCKER with
+    // the exact cell ref. Empty / zero / non-integer → softer per-column flags.
+    checkNumericCell(row[COL.pieces], rn, COL.pieces, true, flag, malformed);
+    checkNumericCell(row[COL.value], rn, COL.value, false, flag, malformed);
+    checkNumericCell(row[COL.weight], rn, COL.weight, false, flag, malformed);
     const wv = toNum(row[COL.weight]);
     if (wv != null && isFinite(wv)) weightSum += wv;
 
@@ -221,10 +224,6 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     if (!carton) flag('carton_empty', rn, '(vide)');
     else cartons.add(carton);
 
-    for (const [key, label] of [[COL.pieces, 'Pieces'], [COL.value, 'Value'], [COL.weight, 'Weight'], [COL.hs, 'hs Code'], [COL.phone, 'Phone']]) {
-      if (hasAmbiguousComma(row[key])) flag('ambiguous_number', rn, `${label}=« ${row[key]} »`);
-    }
-
     const sig = [waybill, desc, str(row[COL.pieces]), str(row[COL.value]), str(row[COL.weight])].join('|');
     if (seenRows.has(sig)) dupRows.push(rn); else seenRows.add(sig);
 
@@ -237,6 +236,14 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
 
   summary.actual_distinct_waybills = waybills.size;
   summary.actual_distinct_cartons = cartons.size;
+
+  // ── Malformed numeric cells (garbage / multi-separator) → BLOCKER ───────────
+  if (malformed.length) {
+    const ex = malformed.slice(0, MAX_EXAMPLES).map((m) => `${m.cell} (${m.label} « ${m.raw} »)`).join(', ');
+    const more = malformed.length > MAX_EXAMPLES ? `, … (+${malformed.length - MAX_EXAMPLES})` : '';
+    add('BLOCKER', 'malformed_number',
+      `${malformed.length} cellule(s) numérique(s) illisible(s) — ni un nombre valide (ex. « 11,5,451145 », « #**** »). Corrigez : ${ex}${more}.`);
+  }
 
   // ── C. Cross-consistency (BLOCKERS) ─────────────────────────────────────────
   if (declaredPositions != null && declaredPositions !== waybills.size) {
@@ -258,7 +265,7 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     weight_invalid: 'Weight non numérique/positive', hs_code_invalid: 'hs Code ≠ 10 chiffres',
     phone_invalid: 'Phone ≠ 9–10 chiffres', city_empty: 'Receiver City vide',
     receiver_empty: 'Receiver Name vide', company_empty: 'Company vide',
-    carton_empty: 'Carton or bag N° vide', ambiguous_number: 'Nombre ambigu (virgule)',
+    carton_empty: 'Carton or bag N° vide',
   };
   const escalateAt = Math.max(10, Math.ceil(summary.data_rows * 0.1)); // >10% ⇒ systematic ⇒ BLOCKER
   for (const [check, list] of Object.entries(bucket)) {
@@ -301,23 +308,46 @@ function colLetter(c) {
   return s;
 }
 
+// Parse a numeric cell, accepting a SINGLE decimal separator (comma OR dot) and
+// optional spaces as thousands separators. "7,03" → 7.03, "1 234,5" → 1234.5.
+// Multiple separators ("11,5,451145") or symbols ("#***") → NaN.
 function toNum(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return v;
-  const s = String(v).trim();
-  if (/^-?\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  const s = String(v).trim().replace(/\s/g, '');
+  if (/^-?\d+([.,]\d+)?$/.test(s)) return parseFloat(s.replace(',', '.'));
   return NaN;
 }
 
-function checkPositiveInt(v, rn, check, flag) {
-  if (typeof v === 'number') { if (!Number.isInteger(v) || v <= 0) flag(check, rn, v); return; }
-  const s = str(v);
-  if (!/^\d+$/.test(s) || parseInt(s, 10) <= 0) flag(check, rn, s || '(vide)');
+// Status of a numeric cell: 'ok' | 'empty' | 'nonpositive' | 'malformed'
+function numCellStatus(v) {
+  if (v == null || String(v).trim() === '') return 'empty';
+  const n = toNum(v);
+  if (n == null || isNaN(n)) return 'malformed';
+  return n > 0 ? 'ok' : 'nonpositive';
 }
 
-function checkPositiveNum(v, rn, check, flag) {
+// Status of an integer cell: 'ok' | 'empty' | 'nonpositive' | 'noninteger' | 'malformed'
+function intCellStatus(v) {
+  if (v == null || String(v).trim() === '') return 'empty';
   const n = toNum(v);
-  if (n == null || isNaN(n) || n <= 0) flag(check, rn, str(v) || '(vide)');
+  if (n == null || isNaN(n)) return 'malformed';
+  if (!Number.isInteger(n)) return 'noninteger';
+  return n > 0 ? 'ok' : 'nonpositive';
+}
+
+// Malformed (garbage / multi-separator) → collected for a hard BLOCKER with the
+// exact cell ref. Empty / zero / non-integer → softer per-column WARNING flags.
+function checkNumericCell(v, rn, colIdx, mustBeInt, flag, malformed) {
+  const status = mustBeInt ? intCellStatus(v) : numCellStatus(v);
+  if (status === 'ok') return;
+  const label = { [COL.pieces]: 'Pieces', [COL.value]: 'Value', [COL.weight]: 'Weight' }[colIdx];
+  if (status === 'malformed') {
+    malformed.push({ cell: `${colLetter(colIdx)}${rn}`, label, raw: str(v) });
+    return;
+  }
+  const check = mustBeInt ? 'pieces_invalid' : (colIdx === COL.value ? 'value_invalid' : 'weight_invalid');
+  flag(check, rn, str(v) || '(vide)');
 }
 
 function finalize(file, summary, issues) {

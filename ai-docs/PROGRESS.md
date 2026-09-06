@@ -49,6 +49,16 @@ was wrongly blocked (and unhandled paths could crash the slicer). Now:
 - Non-empty columns beyond the 13 expected → WARNING (`extra_column`), not a block.
 - Header-row detection also normalized. Added `colLetter()` (0→A … 26→AA).
 
+### Follow-up — malformed numeric cells + comma-decimal support
+Manifests use comma decimals (`7,03` = 7.03). Two fixes:
+- `toNum` now accepts a single decimal separator (comma OR dot) + spaces as
+  thousands, so `"7,03"` is valid and never false-flags a text-stored decimal.
+- Genuinely illegible numeric cells — garbage (`#*****`) or multi-separator
+  (`11,5,451145`) — are now a hard **BLOCKER** (`malformed_number`) naming the
+  exact cell (e.g. `E7`), regardless of count (one NaN corrupts the slice math).
+  Empty/zero/non-integer stay softer per-column WARNINGs. Dropped the old broad
+  `ambiguous_number` check (it false-flagged every comma decimal).
+
 ### ⚠️ To verify
 Test with a manifest that CURRENTLY slices correctly. If it flags
 `structure_shifted`, the real header row isn't index 4 → adjust `HEADER_ROW`
