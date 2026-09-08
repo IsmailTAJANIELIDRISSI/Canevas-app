@@ -12,9 +12,15 @@
  */
 import * as XLSX from 'xlsx';
 
-// Accepted header layouts. Data columns are read by INDEX (see COL below), which
-// is identical for the first 13 columns across every schema — only the header
-// names/count differ (e.g. AliExpress: "Shipper Company", "HSCODE", extra "HAWB").
+// Standard/AliExpress column→index map (data read by index; identical for both).
+const STD_COL = {
+  currency: 0, waybill: 1, desc: 2, pieces: 3, value: 4, city: 5,
+  contact: 6, receiver: 7, company: 8, phone: 9, weight: 10, carton: 11, hs: 12,
+};
+
+// Accepted header layouts. Each schema carries its own header names AND its own
+// column→index map, because some layouts shift the data columns (e.g. Connote has
+// an extra "Sender Ref." at index 2 that pushes Value→5, Weight→11, HS Code→13).
 const SCHEMAS = [
   {
     name: 'Standard (TEMU)',
@@ -23,6 +29,7 @@ const SCHEMAS = [
       'Receiver City', 'Contact', 'Receiver Name', 'Company', 'Phone', 'Weight',
       'Carton or bag N°', 'hs Code',
     ],
+    col: STD_COL,
   },
   {
     name: 'AliExpress',
@@ -31,16 +38,23 @@ const SCHEMAS = [
       'Receiver City', 'Contact', 'Receiver Name', 'Shipper Company', 'Phone', 'Weight',
       'Carton or bag N°', 'HSCODE', 'HAWB',
     ],
+    col: STD_COL,
     // AliExpress phones use international format (e.g. 00212622511266), not the
     // 9–10 digit local form — don't validate phone length for this schema.
     checkPhone: false,
   },
+  {
+    name: 'Connote',
+    headers: [
+      'Currency', 'Connote #', 'Sender Ref.', 'Piece Goods Descriptions', 'Piece', 'Value',
+      'Receiver Town', 'Contact', 'Receiver', 'Sender', 'Phone', 'Weight', 'Bag Number', 'HS Code',
+    ],
+    col: {
+      currency: 0, waybill: 1, desc: 3, pieces: 4, value: 5, city: 6,
+      contact: 7, receiver: 8, company: 9, phone: 10, weight: 11, carton: 12, hs: 13,
+    },
+  },
 ];
-
-const COL = {
-  currency: 0, waybill: 1, desc: 2, pieces: 3, value: 4, city: 5,
-  contact: 6, receiver: 7, company: 8, phone: 9, weight: 10, carton: 11, hs: 12,
-};
 
 const HEADER_ROW = 4; // 0-indexed → row 5 (where the slicer reads headers)
 const MIN_ROWS = 6;
@@ -105,17 +119,18 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   const normH = (s) => str(s).replace(/\s+/g, ' ').toLowerCase();
 
   // ── A. Locate the header row (must be row 5 for the slicer) ─────────────────
+  // Detect by columns common to every schema: "Currency" + "Value".
   let headerIdx = -1;
   for (let i = 2; i <= Math.min(6, jsonData.length - 1); i++) {
     const r = (jsonData[i] || []).map(normH);
-    if (r.includes('waybill number') && (r.includes('description of goods') || r.includes('currency'))) {
+    if (r.includes('currency') && r.includes('value')) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx === -1) {
     add('BLOCKER', 'headers_not_found',
-      'Ligne d\'en-têtes introuvable (attendue en ligne 5, avec « Waybill Number », « Description of Goods »…). Structure du manifeste non reconnue.', 5);
+      'Ligne d\'en-têtes introuvable (attendue en ligne 5, avec « Currency », « Value »…). Structure du manifeste non reconnue.', 5);
     return finalize(filename, { declared_positions: declaredPositions, declared_pcs: declaredPcs, actual_distinct_waybills: null, actual_distinct_cartons: null, data_rows: 0 }, issues);
   }
   // The slicer reads headers at row 5 (index 4). If they're elsewhere, every
@@ -186,11 +201,14 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   // Column names don't match — data columns are unreliable, don't run row checks.
   if (!columnsOk) return finalize(filename, summary, issues);
 
+  // Column→index map for the matched schema (Connote shifts data columns).
+  const C = activeSchema.col;
+
   // The slicer consumes rows until the first one whose currency isn't mad/usd
   // (that row and everything after are ignored). Mirror that here.
   let endIdx = lastNonBlank + 1;
   for (let i = dataStart; i <= lastNonBlank; i++) {
-    const cur = str((jsonData[i] || [])[COL.currency]).toLowerCase();
+    const cur = str((jsonData[i] || [])[C.currency]).toLowerCase();
     if (cur !== 'mad' && cur !== 'usd') { endIdx = i; break; }
   }
   summary.data_rows = Math.max(0, endIdx - dataStart);
@@ -203,7 +221,7 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   }
   if (tail > 1) {
     const stopBlank = isBlankRow(jsonData[endIdx]);
-    const why = stopBlank ? 'ligne vide' : `devise « ${str((jsonData[endIdx] || [])[COL.currency]) || '(vide)'} » non reconnue`;
+    const why = stopBlank ? 'ligne vide' : `devise « ${str((jsonData[endIdx] || [])[C.currency]) || '(vide)'} » non reconnue`;
     add('BLOCKER', 'data_truncated',
       `Le découpage s'arrêterait à la ligne ${endIdx + 1} (${why}), mais ${tail} ligne(s) de données suivent et seraient perdues. Ex : ligne ${tailEx.join(', ')}.`,
       endIdx + 1, 'A');
@@ -227,48 +245,48 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     const row = jsonData[i] || [];
     const rn = i + 1;
 
-    const currency = str(row[COL.currency]);
+    const currency = str(row[C.currency]);
     const cur = currency.toLowerCase();
     if (declaredCurrency && currency.toUpperCase() !== declaredCurrency && cur !== 'usd') {
       flag('currency_mismatch', rn, currency);
     }
 
-    const waybill = str(row[COL.waybill]);
+    const waybill = str(row[C.waybill]);
     if (!waybill) flag('waybill_empty', rn, '(vide)');
     else waybills.add(waybill);
 
-    const desc = str(row[COL.desc]);
+    const desc = str(row[C.desc]);
     if (!desc) flag('desc_empty', rn, '(vide)');
 
     // Numeric cells: genuinely malformed values (garbage like "#*****", or
     // multi-separator like "11,5,451145") → collected for a hard BLOCKER with
     // the exact cell ref. Empty / zero / non-integer → softer per-column flags.
-    checkNumericCell(row[COL.pieces], rn, COL.pieces, true, flag, malformed);
-    checkNumericCell(row[COL.value], rn, COL.value, false, flag, malformed);
-    checkNumericCell(row[COL.weight], rn, COL.weight, false, flag, malformed);
-    const wv = toNum(row[COL.weight]);
+    checkNumericCell(row[C.pieces], rn, C.pieces, 'Pieces', true, flag, malformed);
+    checkNumericCell(row[C.value], rn, C.value, 'Value', false, flag, malformed);
+    checkNumericCell(row[C.weight], rn, C.weight, 'Weight', false, flag, malformed);
+    const wv = toNum(row[C.weight]);
     if (wv != null && isFinite(wv)) weightSum += wv;
 
-    const hs = str(row[COL.hs]);
+    const hs = str(row[C.hs]);
     if (!/^\d{10}$/.test(hs)) flag('hs_code_invalid', rn, hs || '(vide)');
 
-    const phone = str(row[COL.phone]);
+    const phone = str(row[C.phone]);
     if (activeSchema.checkPhone !== false && phone && !/^\d{9,10}$/.test(phone)) {
       flag('phone_invalid', rn, phone);
     }
 
-    if (!str(row[COL.city])) flag('city_empty', rn, '(vide)');
-    if (!str(row[COL.receiver])) flag('receiver_empty', rn, '(vide)');
-    if (!str(row[COL.company])) flag('company_empty', rn, '(vide)');
-    const carton = str(row[COL.carton]);
+    if (!str(row[C.city])) flag('city_empty', rn, '(vide)');
+    if (!str(row[C.receiver])) flag('receiver_empty', rn, '(vide)');
+    if (!str(row[C.company])) flag('company_empty', rn, '(vide)');
+    const carton = str(row[C.carton]);
     if (!carton) flag('carton_empty', rn, '(vide)');
     else cartons.add(carton);
 
-    const sig = [waybill, desc, str(row[COL.pieces]), str(row[COL.value]), str(row[COL.weight])].join('|');
+    const sig = [waybill, desc, str(row[C.pieces]), str(row[C.value]), str(row[C.weight])].join('|');
     if (seenRows.has(sig)) dupRows.push(rn); else seenRows.add(sig);
 
     if (waybill) {
-      const f = [str(row[COL.city]), str(row[COL.contact]), str(row[COL.receiver]), str(row[COL.company]), str(row[COL.phone]), carton].join('|');
+      const f = [str(row[C.city]), str(row[C.contact]), str(row[C.receiver]), str(row[C.company]), str(row[C.phone]), carton].join('|');
       if (wbFields.has(waybill)) { if (wbFields.get(waybill) !== f) wbInconsistent.add(waybill); }
       else wbFields.set(waybill, f);
     }
@@ -378,15 +396,14 @@ function intCellStatus(v) {
 
 // Malformed (garbage / multi-separator) → collected for a hard BLOCKER with the
 // exact cell ref. Empty / zero / non-integer → softer per-column WARNING flags.
-function checkNumericCell(v, rn, colIdx, mustBeInt, flag, malformed) {
+function checkNumericCell(v, rn, colIdx, label, mustBeInt, flag, malformed) {
   const status = mustBeInt ? intCellStatus(v) : numCellStatus(v);
   if (status === 'ok') return;
-  const label = { [COL.pieces]: 'Pieces', [COL.value]: 'Value', [COL.weight]: 'Weight' }[colIdx];
   if (status === 'malformed') {
     malformed.push({ cell: `${colLetter(colIdx)}${rn}`, label, raw: str(v) });
     return;
   }
-  const check = mustBeInt ? 'pieces_invalid' : (colIdx === COL.value ? 'value_invalid' : 'weight_invalid');
+  const check = mustBeInt ? 'pieces_invalid' : (label === 'Value' ? 'value_invalid' : 'weight_invalid');
   flag(check, rn, str(v) || '(vide)');
 }
 

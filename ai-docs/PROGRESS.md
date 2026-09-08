@@ -89,6 +89,17 @@ Schemas can now carry per-format check overrides; AliExpress sets
 still applies to Standard/TEMU). The matched schema is captured as
 `activeSchema` and consulted in the row loop.
 
+### Follow-up — third header schema (Connote) with shifted columns
+A Connote-type manifest uses a different layout with an extra `Sender Ref.`
+column, shifting the data columns:
+`Currency | Connote # | Sender Ref. | Piece Goods Descriptions | Piece | Value |
+Receiver Town | Contact | Receiver | Sender | Phone | Weight | Bag Number | HS Code`
+(Value→F/5, Weight→L/11, HS Code→N/13). Each `SCHEMAS` entry now carries its own
+`col` (column→index) map; the validator uses the **matched schema's** map for all
+data checks (`const C = activeSchema.col`), so shifted columns are validated at the
+right positions. Header-row detection changed to `Currency` + `Value` (common to
+all schemas, since Connote has neither "Waybill Number" nor "Description of Goods").
+
 ### Follow-up — second header schema (AliExpress)
 AliExpress LTAs use a variant header row:
 `… Receiver Name | Shipper Company | Phone | Weight | Carton or bag N° | HSCODE | HAWB`
