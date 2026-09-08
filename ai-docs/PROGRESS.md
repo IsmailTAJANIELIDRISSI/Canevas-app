@@ -59,6 +59,14 @@ Manifests use comma decimals (`7,03` = 7.03). Two fixes:
   Empty/zero/non-integer stay softer per-column WARNINGs. Dropped the old broad
   `ambiguous_number` check (it false-flagged every comma decimal).
 
+### Follow-up — skip phone check for AliExpress
+AliExpress phones are in international format (`00212622511266`), not the 9–10
+digit local form, so the phone check was wrongly BLOCKING those manifests.
+Schemas can now carry per-format check overrides; AliExpress sets
+`checkPhone: false`, so phone length isn't validated for that schema (the check
+still applies to Standard/TEMU). The matched schema is captured as
+`activeSchema` and consulted in the row loop.
+
 ### Follow-up — second header schema (AliExpress)
 AliExpress LTAs use a variant header row:
 `… Receiver Name | Shipper Company | Phone | Weight | Carton or bag N° | HSCODE | HAWB`

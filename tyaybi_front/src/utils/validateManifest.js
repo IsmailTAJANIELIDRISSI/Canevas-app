@@ -31,6 +31,9 @@ const SCHEMAS = [
       'Receiver City', 'Contact', 'Receiver Name', 'Shipper Company', 'Phone', 'Weight',
       'Carton or bag N°', 'HSCODE', 'HAWB',
     ],
+    // AliExpress phones use international format (e.g. 00212622511266), not the
+    // 9–10 digit local form — don't validate phone length for this schema.
+    checkPhone: false,
   },
 ];
 
@@ -144,6 +147,7 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   const evals = SCHEMAS.map(evalSchema);
   const matching = evals.find((e) => e.mismatches.length === 0);
   let columnsOk = true;
+  const activeSchema = matching ? matching.schema : null;
   if (matching) {
     // Leading columns match this schema → proceed. Extra trailing columns: WARN.
     for (const c of matching.extra) {
@@ -249,7 +253,9 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     if (!/^\d{10}$/.test(hs)) flag('hs_code_invalid', rn, hs || '(vide)');
 
     const phone = str(row[COL.phone]);
-    if (phone && !/^\d{9,10}$/.test(phone)) flag('phone_invalid', rn, phone);
+    if (activeSchema.checkPhone !== false && phone && !/^\d{9,10}$/.test(phone)) {
+      flag('phone_invalid', rn, phone);
+    }
 
     if (!str(row[COL.city])) flag('city_empty', rn, '(vide)');
     if (!str(row[COL.receiver])) flag('receiver_empty', rn, '(vide)');
