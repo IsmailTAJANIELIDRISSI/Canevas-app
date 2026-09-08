@@ -644,39 +644,54 @@ app.post("/lta/scan", async (req, res) => {
     const trimmedRef = ref.trim();
     if (!trimmedRef) continue;
 
-    // Search for folder matching "MAWB {ref}" (case-insensitive, ignoring spaces)
-    // Searches partagePath directly first, then one level of subdirectories
-    // (to support root paths like \\server\PARTAGE that contain type subfolders
-    //  e.g. ALIEXPRESS/, TEMU HKG/, TEMU SPEEDAF/ each containing MAWB folders)
+    // Search for a folder for this LTA. Match either the exact "MAWB {ref}" name,
+    // or any folder whose normalized name CONTAINS the ref (e.g. no "MAWB " prefix,
+    // or a suffix like " TEMU"). Case-insensitive, spaces ignored.
+    // Searches partagePath directly first, then one level of subdirectories.
+    const scanLog = [];
+    const slog = (m) => { console.log(m); scanLog.push(m); };
+
+    // Normalize: lowercase, drop spaces, and strip LEADING ZEROS from each digit
+    // group so "157-00067174" and "157-0067174" (one zero fewer) match.
+    const norm = (s) => String(s).toLowerCase().replace(/\s+/g, "").replace(/\d+/g, (d) => d.replace(/^0+(?=\d)/, ""));
+    const refKey = norm(trimmedRef);      // "157-00067174" -> "157-67174"
+    const targetKey = `mawb${refKey}`;    // "mawb157-67174"
+    slog(`[scan] === LTA "${trimmedRef}" — targetKey="${targetKey}" refKey="${refKey}" (zéros de tête ignorés) ===`);
+    slog(`[scan] partagePath="${partagePath}"`);
+
     let folderPath = null;
-    function findMawbFolder(searchPath, targetKey) {
+    function findMawbFolder(searchPath) {
       try {
         const entries = fs.readdirSync(searchPath, { withFileTypes: true });
-        const match = entries.find(
-          (e) =>
-            e.isDirectory() &&
-            e.name.toLowerCase().replace(/\s+/g, "") === targetKey,
-        );
+        const dirs = entries.filter((e) => e.isDirectory());
+        slog(`[scan]   "${searchPath}" -> ${dirs.length} dossier(s): ${dirs.map((d) => d.name).slice(0, 40).join(" | ") || "(aucun)"}`);
+        // 1. exact "MAWB {ref}" (zeros normalized)
+        let match = dirs.find((e) => norm(e.name) === targetKey);
+        // 2. fallback: normalized folder name contains the normalized ref
+        if (!match) match = dirs.find((e) => norm(e.name).includes(refKey));
+        if (match) slog(`[scan]   MATCH -> "${match.name}"`);
         return match ? path.join(searchPath, match.name) : null;
-      } catch {
+      } catch (e) {
+        slog(`[scan]   (illisible "${searchPath}": ${e.message})`);
         return null;
       }
     }
     try {
-      const targetKey = `mawb${trimmedRef.toLowerCase().replace(/\s+/g, "")}`;
       // 1. Try direct children of partagePath
-      folderPath = findMawbFolder(partagePath, targetKey);
+      folderPath = findMawbFolder(partagePath);
       // 2. If not found, search one level deeper (type subfolders)
       if (!folderPath) {
         const topEntries = fs.readdirSync(partagePath, { withFileTypes: true });
         for (const entry of topEntries) {
           if (!entry.isDirectory()) continue;
           const subPath = path.join(partagePath, entry.name);
-          folderPath = findMawbFolder(subPath, targetKey);
+          folderPath = findMawbFolder(subPath);
           if (folderPath) break;
         }
       }
     } catch (e) {
+      slog(`[scan] ERREUR lecture PARTAGE: ${e.message}`);
+      appendLtaLog(trimmedRef, scanLog);
       results.push({
         ref: trimmedRef,
         found: false,
@@ -686,9 +701,13 @@ app.post("/lta/scan", async (req, res) => {
     }
 
     if (!folderPath) {
+      slog(`[scan] AUCUN dossier trouvé pour "${trimmedRef}"`);
+      appendLtaLog(trimmedRef, scanLog);
       results.push({ ref: trimmedRef, found: false });
       continue;
     }
+    slog(`[scan] folderPath="${folderPath}"`);
+    appendLtaLog(trimmedRef, scanLog);
 
     try {
       const files = fs.readdirSync(folderPath);

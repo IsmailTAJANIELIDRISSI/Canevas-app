@@ -4,6 +4,28 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 31 — Scan: match LTA folder despite leading-zero differences
+
+### Problem
+Scanning `157-00067174` returned `found:false` even though the folder existed —
+it was named `MAWB 157-0067174` (**one fewer leading zero** than the typed ref).
+The exact-string folder match failed on that zero difference.
+
+### Solution
+- `POST /lta/scan` now normalizes both the ref and folder names by stripping
+  **leading zeros from each digit group** (`157-00067174` and `157-0067174` both
+  → `157-67174`), then matches. Also added a containment fallback (folder name
+  merely *contains* the ref) and full `[scan]` console+log-file diagnostics
+  (targetKey, every folder scanned, match/no-match).
+- Files inside the matched folder are still picked by extension, so mismatched
+  filename zeros don't matter once the folder is found.
+
+### Files Modified
+- `tyaybi_back/index.js` — scan folder matcher: zero-normalization, containment
+  fallback, `[scan]` logging via `appendLtaLog`
+
+---
+
 ## Session 30 — Manifest validation step before DUM slicing
 
 ### Problem
