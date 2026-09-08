@@ -12,10 +12,26 @@
  */
 import * as XLSX from 'xlsx';
 
-const EXPECTED_HEADERS = [
-  'Currency', 'Waybill Number', 'Description of Goods', 'Pieces', 'Value',
-  'Receiver City', 'Contact', 'Receiver Name', 'Company', 'Phone', 'Weight',
-  'Carton or bag N°', 'hs Code',
+// Accepted header layouts. Data columns are read by INDEX (see COL below), which
+// is identical for the first 13 columns across every schema — only the header
+// names/count differ (e.g. AliExpress: "Shipper Company", "HSCODE", extra "HAWB").
+const SCHEMAS = [
+  {
+    name: 'Standard (TEMU)',
+    headers: [
+      'Currency', 'Waybill Number', 'Description of Goods', 'Pieces', 'Value',
+      'Receiver City', 'Contact', 'Receiver Name', 'Company', 'Phone', 'Weight',
+      'Carton or bag N°', 'hs Code',
+    ],
+  },
+  {
+    name: 'AliExpress',
+    headers: [
+      'Currency', 'Waybill Number', 'Description of Goods', 'Pieces', 'Value',
+      'Receiver City', 'Contact', 'Receiver Name', 'Shipper Company', 'Phone', 'Weight',
+      'Carton or bag N°', 'HSCODE', 'HAWB',
+    ],
+  },
 ];
 
 const COL = {
@@ -84,7 +100,6 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   // Headers are compared after normalization: collapse internal whitespace runs
   // and ignore case, so " Pieces " / "PIECES" / "hs  code" are accepted as-is.
   const normH = (s) => str(s).replace(/\s+/g, ' ').toLowerCase();
-  const EXPECTED_NORM = EXPECTED_HEADERS.map(normH);
 
   // ── A. Locate the header row (must be row 5 for the slicer) ─────────────────
   let headerIdx = -1;
@@ -108,24 +123,43 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
       headerIdx + 1);
   }
 
-  // ── A. Header columns — normalized comparison, per-cell messages ────────────
+  // ── A. Header columns — accept any known schema (normalized, per-cell) ──────
   const headerRow = (jsonData[headerIdx] || []).map((c) => str(c));
+
+  const evalSchema = (schema) => {
+    const norm = schema.headers.map(normH);
+    const mismatches = [];
+    let matched = 0;
+    for (let c = 0; c < norm.length; c++) {
+      if (normH(headerRow[c]) === norm[c]) matched++;
+      else mismatches.push({ c, expected: schema.headers[c], found: headerRow[c] });
+    }
+    const extra = [];
+    for (let c = schema.headers.length; c < headerRow.length; c++) {
+      if (str(headerRow[c])) extra.push(c);
+    }
+    return { schema, matched, mismatches, extra };
+  };
+
+  const evals = SCHEMAS.map(evalSchema);
+  const matching = evals.find((e) => e.mismatches.length === 0);
   let columnsOk = true;
-  for (let c = 0; c < EXPECTED_HEADERS.length; c++) {
-    if (normH(headerRow[c]) !== EXPECTED_NORM[c]) {
-      columnsOk = false;
-      const cell = `${colLetter(c)}${headerIdx + 1}`;
-      add('BLOCKER', 'header_mismatch',
-        `Cellule ${cell} : attendu « ${EXPECTED_HEADERS[c]} », trouvé « ${headerRow[c] || '(vide)'} ». Colonne manquante, renommée, décalée ou dans le mauvais ordre.`,
+  if (matching) {
+    // Leading columns match this schema → proceed. Extra trailing columns: WARN.
+    for (const c of matching.extra) {
+      add('WARNING', 'extra_column',
+        `Cellule ${colLetter(c)}${headerIdx + 1} : colonne supplémentaire « ${headerRow[c]} » au-delà du format ${matching.schema.name}.`,
         headerIdx + 1, colLetter(c));
     }
-  }
-  // Unexpected non-empty columns beyond the 13 expected (WARNING — likely ignored)
-  for (let c = EXPECTED_HEADERS.length; c < headerRow.length; c++) {
-    if (str(headerRow[c])) {
-      add('WARNING', 'extra_column',
-        `Cellule ${colLetter(c)}${headerIdx + 1} : colonne supplémentaire inattendue « ${headerRow[c]} » (au-delà de « hs Code »).`,
-        headerIdx + 1, colLetter(c));
+  } else {
+    columnsOk = false;
+    // Report per-cell mismatches against the closest schema for relevant messages.
+    const best = evals.slice().sort((a, b) => b.matched - a.matched)[0];
+    const others = SCHEMAS.map((s) => s.name).join(' / ');
+    for (const m of best.mismatches) {
+      add('BLOCKER', 'header_mismatch',
+        `Cellule ${colLetter(m.c)}${headerIdx + 1} : attendu « ${m.expected} » (format ${best.schema.name}), trouvé « ${m.found || '(vide)'} ». Colonne manquante, renommée, décalée ou dans le mauvais ordre. Formats acceptés : ${others}.`,
+        headerIdx + 1, colLetter(m.c));
     }
   }
 

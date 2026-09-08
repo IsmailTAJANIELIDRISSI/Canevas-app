@@ -59,6 +59,16 @@ Manifests use comma decimals (`7,03` = 7.03). Two fixes:
   Empty/zero/non-integer stay softer per-column WARNINGs. Dropped the old broad
   `ambiguous_number` check (it false-flagged every comma decimal).
 
+### Follow-up — second header schema (AliExpress)
+AliExpress LTAs use a variant header row:
+`… Receiver Name | Shipper Company | Phone | Weight | Carton or bag N° | HSCODE | HAWB`
+(vs TEMU's `… Company | … | hs Code`). The validator now matches against a list
+of `SCHEMAS` (Standard TEMU + AliExpress); a manifest passes if it matches **any**
+schema (normalized). Data columns are read by the same indices (0–12) in both, so
+the slicer is unaffected; the AliExpress `HAWB` (col N) no longer trips the
+extra-column check. On a real mismatch, per-cell errors are reported against the
+**closest** schema and list the accepted formats.
+
 ### ⚠️ To verify
 Test with a manifest that CURRENTLY slices correctly. If it flags
 `structure_shifted`, the real header row isn't index 4 → adjust `HEADER_ROW`
