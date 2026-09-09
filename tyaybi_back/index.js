@@ -770,6 +770,31 @@ app.post("/lta/scan", async (req, res) => {
           `Aucun MAWB (LTA) trouvé — seulement le manifeste "${pdfFile}". Saisissez le fret et la devise manuellement.`,
         );
       }
+
+      // Critical: do the files inside actually carry THIS LTA's ref? A folder
+      // named "MAWB 235-96139503" holding files "…235-96139035.…" is a mislabel
+      // that must block processing (wrong manifest/MAWB for the LTA).
+      const extractFileRef = (name) => {
+        const m = String(name).match(/(\d{2,4}-\d{4,})/);
+        return m ? m[1] : null;
+      };
+      const refMismatches = [];
+      for (const f of [xlsxFile, ...pdfFiles].filter(Boolean)) {
+        const fileRef = extractFileRef(f);
+        if (fileRef && norm(fileRef) !== refKey) {
+          refMismatches.push({ file: f, fileRef });
+        }
+      }
+      const refMismatch = refMismatches.length > 0;
+      if (refMismatch) {
+        const list = refMismatches.map((m) => `« ${m.file} » (réf ${m.fileRef})`).join(", ");
+        warnings.push(
+          `Référence incohérente : le dossier est « ${trimmedRef} » mais contient ${list}. Vérifiez que les bons fichiers sont dans le dossier avant de traiter.`,
+        );
+        slog(`[scan] REF MISMATCH: dossier="${trimmedRef}" fichiers=${refMismatches.map((m) => m.fileRef).join(",")}`);
+        appendLtaLog(trimmedRef, scanLog);
+      }
+
       const warning = warnings.length ? warnings.join(" ") : null;
 
       results.push({
@@ -783,6 +808,7 @@ app.post("/lta/scan", async (req, res) => {
         pdfB64,
         pdfName: pdfFile || null,
         mawbMissing: !mawbPdf,
+        refMismatch,
         warning,
         mawbCurrency,
         fretValue,

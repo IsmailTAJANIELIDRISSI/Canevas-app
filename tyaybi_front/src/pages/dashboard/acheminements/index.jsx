@@ -398,6 +398,7 @@ function makeCard(ref) {
     error: null,
     warning: null,
     manifestMissing: false,
+    refMismatch: false,
     validation: null,
     blocage: false,
     blocageUsdRate: '',
@@ -557,6 +558,7 @@ export default function Acheminements() {
           fret: extractedFret,
           warning: r.warning || null,
           manifestMissing: r.manifestMissing || false,
+          refMismatch: r.refMismatch || false,
         };
       });
 
@@ -613,7 +615,9 @@ export default function Acheminements() {
   // ── execute (slice) ──────────────────────────────────────────────────────
 
   const handleSliceAll = async () => {
-    const pending = cards.filter(c => c.manifestB64 && c.status !== 'processing');
+    // Skip ref-mismatched cards in bulk (they already show a red banner) so an
+    // alert() doesn't block the whole run.
+    const pending = cards.filter(c => c.manifestB64 && !c.refMismatch && c.status !== 'processing');
     for (const card of pending) {
       await handleExecute(card);
     }
@@ -621,6 +625,9 @@ export default function Acheminements() {
 
   const handleExecute = async (card, skipValidation = false) => {
     if (!card.manifestB64) return;
+    if (card.refMismatch) {
+      return alert(`Référence incohérente pour ${card.ref} : les fichiers dans le dossier ne portent pas la même référence que le dossier. Corrigez le contenu du dossier avant de traiter.`);
+    }
     if (!card.madValue && card.madValue !== 0) {
       return alert('Veuillez entrer la valeur Fret et attendre le taux de change.');
     }
@@ -972,20 +979,24 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
           </div>
         )}
 
-        {card.warning && (
-          <div className={`flex items-start gap-2 rounded-lg p-3 text-sm border ${
-            card.manifestMissing
-              ? 'bg-red-50 text-red-800 border-red-300'
-              : 'bg-amber-50 text-amber-800 border-amber-300'
-          }`}>
-            <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 flex-shrink-0 ${card.manifestMissing ? 'text-red-500' : 'text-amber-500'}`} viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <span>
-              <strong>{card.manifestMissing ? 'Manifeste manquant.' : 'PDF MAWB manquant.'}</strong> {card.warning}
-            </span>
-          </div>
-        )}
+        {card.warning && (() => {
+          const critical = card.manifestMissing || card.refMismatch;
+          const label = card.refMismatch
+            ? 'Référence incohérente.'
+            : card.manifestMissing
+            ? 'Manifeste manquant.'
+            : 'PDF MAWB manquant.';
+          return (
+            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm border ${
+              critical ? 'bg-red-50 text-red-800 border-red-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+            }`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 flex-shrink-0 ${critical ? 'text-red-500' : 'text-amber-500'}`} viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span><strong>{label}</strong> {card.warning}</span>
+            </div>
+          );
+        })()}
 
         {(card.status === 'ready' || card.status === 'done') && (
           <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 3fr' }}>

@@ -4,6 +4,29 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 32 — Block LTA whose files' ref ≠ folder ref
+
+### Problem
+A folder `MAWB 235-96139503` sometimes contains files for a DIFFERENT LTA
+(`MAWB 235-96139035.pdf`, `Manifeste 235-96139035.xlsx` — transposed digits).
+The wrong manifest/MAWB would be processed silently.
+
+### Solution
+- `POST /lta/scan` now extracts the ref (`\d{2,4}-\d{4,}`) from each xlsx/pdf
+  filename and compares it (zero-normalized) to the folder's ref. On mismatch it
+  returns `refMismatch:true` + a French warning naming the offending file(s), and
+  logs `[scan] REF MISMATCH …`.
+- Frontend: card shows a **red** critical banner ("Référence incohérente.");
+  `handleExecute` blocks single slicing with an alert; bulk "Découper tous" skips
+  mismatched cards (they're visibly flagged) so no alert stalls the run.
+
+### Files Modified
+- `tyaybi_back/index.js` — scan: per-file ref check + `refMismatch` flag
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — card state, scan
+  mapping, red banner, execute block, bulk skip
+
+---
+
 ## Session 31 — Scan: match LTA folder despite leading-zero differences
 
 ### Problem
