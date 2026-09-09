@@ -44,6 +44,17 @@ const SCHEMAS = [
     checkPhone: false,
   },
   {
+    // AliExpress variant: Standard layout but "Tel destinataire" / "HSCODE".
+    name: 'AliExpress (Tel destinataire)',
+    headers: [
+      'Currency', 'Waybill Number', 'Description of Goods', 'Pieces', 'Value',
+      'Receiver City', 'Contact', 'Receiver Name', 'Company', 'Tel destinataire', 'Weight',
+      'Carton or bag N°', 'HSCODE',
+    ],
+    col: STD_COL,
+    checkPhone: false,
+  },
+  {
     name: 'Connote',
     headers: [
       'Currency', 'Connote #', 'Sender Ref.', 'Piece Goods Descriptions', 'Piece', 'Value',
