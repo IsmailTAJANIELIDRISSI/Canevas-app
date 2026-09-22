@@ -172,6 +172,16 @@ Searches the current user's **Inbox (recursively)**:
   console **and** the daily LTA log via `appendLtaLog`, so an empty result is
   diagnosable (wrong folder / subject format / sender mismatch).
 
+### Follow-up — subject cleaning cut too much at "//"
+The prefix-strip regex `//\s*(.+)$` matched ANY `//` in the subject and kept only
+the tail. A real Abdelhak subject ending in `…###NB//DS Cie sera saisi vers minuit
+inchallah.` got reduced to just `DS Cie sera saisi vers minuit inchallah.` — the
+draft went out with the wrong object. Fixed: instead of cutting at `//`, extract
+from `Nème/Ner Acheminement` to the end (`(\d+\S*\s*Acheminement.*)`). Abdelhak's
+`16éme Acheminement …###NB//…` is kept whole; the DS variant
+`DS MEAD LTA <ref> // 4éme Acheminement…` still drops its prefix; if the pattern
+isn't found the full subject is kept unchanged.
+
 ### Follow-up — Display() COM crash on temp/lock files
 Intermittent `$mail.Display()` failure: `Index de la matrice en dehors des
 limites` (array index out of bounds, COMException). Cause: the folder sometimes

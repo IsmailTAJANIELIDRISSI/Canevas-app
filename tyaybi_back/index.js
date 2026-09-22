@@ -1466,7 +1466,7 @@ app.post("/lta/open-email-draft", (req, res) => {
         `if ($script:subjectFound) { $chosen = $script:subjectFound } elseif ($script:fallbackSubject) { $chosen = $script:fallbackSubject }`,
         `Write-Host ("[email-draft] scanned " + $script:foldersScanned + " folder(s), " + $script:candidates + " candidate(s)")`,
         `if ($chosen) {`,
-        `  if ($chosen -match '//\\s*(.+)$') { $chosen = $matches[1].Trim() }`,
+        `  if ($chosen -match '(\\d+\\S*\\s*Acheminement.*)') { $chosen = $matches[1].Trim() }`,
         `  $mail.Subject = $chosen`,
         `  Write-Host ("[email-draft] FINAL subject: " + $mail.Subject)`,
         `} else {`,
