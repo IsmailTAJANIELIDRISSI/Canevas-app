@@ -125,9 +125,10 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     declaredPositions = parseInt(posMatch[1], 10);
   }
 
-  // Headers are compared after normalization: collapse internal whitespace runs
-  // and ignore case, so " Pieces " / "PIECES" / "hs  code" are accepted as-is.
-  const normH = (s) => str(s).replace(/\s+/g, ' ').toLowerCase();
+  // Headers are compared after normalization: drop '.'/',' punctuation, collapse
+  // whitespace, ignore case — so " Pieces ", "PIECES", "hs  code",
+  // "Sender Ref." / "Sender Ref," are all accepted as equal.
+  const normH = (s) => str(s).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
   // ── A. Locate the header row (must be row 5 for the slicer) ─────────────────
   // Detect by columns common to every schema: "Currency" + "Value".
