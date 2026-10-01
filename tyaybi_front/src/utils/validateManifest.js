@@ -315,15 +315,27 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
       `${malformed.length} cellule(s) numérique(s) illisible(s) — ni un nombre valide (ex. « 11,5,451145 », « #**** »). Corrigez : ${ex}${more}.`);
   }
 
-  // ── C. Cross-consistency (BLOCKERS) ─────────────────────────────────────────
+  // ── C. Cross-consistency ────────────────────────────────────────────────────
+  // A small gap is normal (one LTA can span several "positions", a bag can be
+  // reused), so only a SIGNIFICANT gap means the header summary came from a
+  // different/incomplete dataset. Small gap → WARNING, large gap → BLOCKER.
+  const countTolerance = (declared) => Math.max(5, Math.ceil(declared * 0.01));
+
   if (declaredPositions != null && declaredPositions !== waybills.size) {
-    add('BLOCKER', 'positions_count_mismatch',
-      `L'en-tête déclare ${declaredPositions} Positions, mais ${waybills.size} numéros de LTA (Waybill) distincts ont été trouvés dans les données. Le résumé du manifeste est incohérent — corrigez à la source.`,
+    const diff = Math.abs(declaredPositions - waybills.size);
+    const sev = diff > countTolerance(declaredPositions) ? 'BLOCKER' : 'WARNING';
+    const tail = sev === 'BLOCKER'
+      ? 'Écart important — le résumé du manifeste est incohérent, corrigez à la source.'
+      : "Écart faible — normal si une LTA couvre plusieurs positions ; vérifiez puis continuez.";
+    add(sev, 'positions_count_mismatch',
+      `L'en-tête déclare ${declaredPositions} Positions, mais ${waybills.size} numéros de LTA (Waybill) distincts ont été trouvés (écart de ${diff}). ${tail}`,
       3, 'A');
   }
   if (declaredPcs != null && declaredPcs !== cartons.size) {
-    add('BLOCKER', 'pcs_count_mismatch',
-      `L'en-tête déclare ${declaredPcs} Pcs, mais ${cartons.size} « Carton or bag N° » distincts ont été trouvés dans les données.`,
+    const diff = Math.abs(declaredPcs - cartons.size);
+    const sev = diff > countTolerance(declaredPcs) ? 'BLOCKER' : 'WARNING';
+    add(sev, 'pcs_count_mismatch',
+      `L'en-tête déclare ${declaredPcs} Pcs, mais ${cartons.size} « Carton or bag N° » distincts ont été trouvés (écart de ${diff}).`,
       2, 'A');
   }
 

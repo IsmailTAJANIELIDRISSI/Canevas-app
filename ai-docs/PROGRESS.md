@@ -4,6 +4,26 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 33 — Positions/Pcs cross-check: tolerate small gaps
+
+### Problem
+A manifest declaring `2148 Positions` with 2146 distinct Waybill Numbers was
+BLOCKED. A gap of 2 out of 2148 (0.09%) is not a corrupted manifest — one LTA can
+legitimately span several "positions". The check used a strict `!==`, so any
+difference, even 1, blocked processing.
+
+### Solution
+`positions_count_mismatch` and `pcs_count_mismatch` are now severity-scaled:
+tolerance = `max(5, 1% of declared)`. Within tolerance → **WARNING** (amber panel,
+user confirms and continues); beyond it → **BLOCKER**. The message now reports the
+gap explicitly. The original motivating case (declared 1549 vs 1809 actual, gap
+260) still blocks.
+
+### Files Modified
+- `tyaybi_front/src/utils/validateManifest.js` — `countTolerance()` + scaled severity
+
+---
+
 ## Session 32 — Block LTA whose files' ref ≠ folder ref
 
 ### Problem
