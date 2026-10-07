@@ -39,3 +39,6 @@ model_five/
 
 # Local dev launcher (starts servers without the git hard-reset) — dev machine only
 Tyaybi_dev.bat
+
+# Local backup copies of the converter / Excelslice files (convert*Old*)
+convert*Old*
