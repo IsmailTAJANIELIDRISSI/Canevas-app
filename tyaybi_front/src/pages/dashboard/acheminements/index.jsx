@@ -1191,6 +1191,24 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
                     >
                       Résumé uniquement
                     </Button>
+                    {/* GLOBAL sheet — same file as Excelslice's "Download Excel file GLOBAL" */}
+                    {(() => {
+                      const globalSheet = card.sliceResult.sheets.find(s => s.name === 'GLOBAL');
+                      if (!globalSheet) return null;
+                      return (
+                        <Button
+                          size="sm"
+                          variant="outlined"
+                          color="blue-gray"
+                          disabled={downloading || saving || downloadingIdx === 'GLOBAL'}
+                          onClick={() => handleDownloadSheet(globalSheet.data, 'GLOBAL', 'GLOBAL')}
+                          className="flex items-center gap-2"
+                        >
+                          {downloadingIdx === 'GLOBAL' && <Spinner className="h-3 w-3" />}
+                          Excel GLOBAL ↓
+                        </Button>
+                      );
+                    })()}
                     <Button
                       size="sm"
                       color="teal"

@@ -4,6 +4,32 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 35 — Acheminements: "Excel GLOBAL" download button
+
+### Request
+Bring the Excelslice GLOBAL Excel download (`handleDownloadSpecificSheet` in
+`clients/convertpdf.jsx` → `GLOBAL_sliced_file.xlsx`) to each LTA card of
+`/dashboard/Acheminements`, next to "Résumé uniquement". The card already listed
+the DUM sheets (SHEET 1…N) but filtered GLOBAL out.
+
+### Solution
+New "Excel GLOBAL ↓" button after "Résumé uniquement", rendered only when the
+slice result has a GLOBAL sheet. It reuses the card's existing
+`handleDownloadSheet` → `downloadSingleSheet`, whose writer matches Excelslice's
+(columns 0–19, same styles, auto-width ≥ 20, same `${name}_sliced_file.xlsx`
+file name). Spinner keyed on `downloadingIdx === 'GLOBAL'`.
+
+### Verification
+GLOBAL from `Manifeste 065-46100740.xlsx` (69 632,83 MAD) written by both the
+Acheminements writer and the Excelslice writer: 7014 × 20 cells, 140 280 compared
+(value, font, alignment, border) → 0 differences except data-cell font
+`bold:false` vs unset, which renders identically. Column widths identical.
+
+### Files Modified
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — GLOBAL button
+
+---
+
 ## Session 34 — New manifest format: "Receiver Addresse" column (business update)
 
 ### Request
