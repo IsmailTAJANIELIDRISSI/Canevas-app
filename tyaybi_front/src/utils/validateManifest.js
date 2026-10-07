@@ -153,6 +153,19 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
       headerIdx + 1);
   }
 
+  // ── Optional "Receiver Addresse" column (business format update) ──────────
+  // Drop it before schema matching so every schema accepts the newer layout —
+  // same rule as sliceManifest. phys() maps a column back to its real
+  // spreadsheet position so cell refs in messages stay accurate.
+  const addrIdx = (jsonData[headerIdx] || []).map(normH)
+    .findIndex((h) => /^receiver addr?ess?e?$/.test(h));
+  if (addrIdx >= 0) {
+    for (let i = headerIdx; i < jsonData.length; i++) {
+      if (Array.isArray(jsonData[i]) && jsonData[i].length > addrIdx) jsonData[i].splice(addrIdx, 1);
+    }
+  }
+  const phys = (c) => (addrIdx >= 0 && c >= addrIdx ? c + 1 : c);
+
   // ── A. Header columns — accept any known schema (normalized, per-cell) ──────
   const headerRow = (jsonData[headerIdx] || []).map((c) => str(c));
 
@@ -179,8 +192,8 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     // Leading columns match this schema → proceed. Extra trailing columns: WARN.
     for (const c of matching.extra) {
       add('WARNING', 'extra_column',
-        `Cellule ${colLetter(c)}${headerIdx + 1} : colonne supplémentaire « ${headerRow[c]} » au-delà du format ${matching.schema.name}.`,
-        headerIdx + 1, colLetter(c));
+        `Cellule ${colLetter(phys(c))}${headerIdx + 1} : colonne supplémentaire « ${headerRow[c]} » au-delà du format ${matching.schema.name}.`,
+        headerIdx + 1, colLetter(phys(c)));
     }
   } else {
     columnsOk = false;
@@ -189,8 +202,8 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     const others = SCHEMAS.map((s) => s.name).join(' / ');
     for (const m of best.mismatches) {
       add('BLOCKER', 'header_mismatch',
-        `Cellule ${colLetter(m.c)}${headerIdx + 1} : attendu « ${m.expected} » (format ${best.schema.name}), trouvé « ${m.found || '(vide)'} ». Colonne manquante, renommée, décalée ou dans le mauvais ordre. Formats acceptés : ${others}.`,
-        headerIdx + 1, colLetter(m.c));
+        `Cellule ${colLetter(phys(m.c))}${headerIdx + 1} : attendu « ${m.expected} » (format ${best.schema.name}), trouvé « ${m.found || '(vide)'} ». Colonne manquante, renommée, décalée ou dans le mauvais ordre. Formats acceptés : ${others}.`,
+        headerIdx + 1, colLetter(phys(m.c)));
     }
   }
 
@@ -273,9 +286,9 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
     // Numeric cells: genuinely malformed values (garbage like "#*****", or
     // multi-separator like "11,5,451145") → collected for a hard BLOCKER with
     // the exact cell ref. Empty / zero / non-integer → softer per-column flags.
-    checkNumericCell(row[C.pieces], rn, C.pieces, 'Pieces', true, flag, malformed);
-    checkNumericCell(row[C.value], rn, C.value, 'Value', false, flag, malformed);
-    checkNumericCell(row[C.weight], rn, C.weight, 'Weight', false, flag, malformed);
+    checkNumericCell(row[C.pieces], rn, phys(C.pieces), 'Pieces', true, flag, malformed);
+    checkNumericCell(row[C.value], rn, phys(C.value), 'Value', false, flag, malformed);
+    checkNumericCell(row[C.weight], rn, phys(C.weight), 'Weight', false, flag, malformed);
     const wv = toNum(row[C.weight]);
     if (wv != null && isFinite(wv)) weightSum += wv;
 

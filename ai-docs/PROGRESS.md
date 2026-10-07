@@ -4,6 +4,54 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 34 — New manifest format: "Receiver Addresse" column (business update)
+
+### Request
+The business team inserts a fixed **"Receiver Addresse"** column at **G** (between
+"Receiver City" and "Contact"); every column after F shifts by +1. Requirements:
+split and calculation logic unchanged; DUM **Excel** files keep the old format;
+DUM **PDF** files must show the receiver address.
+Reference files: old `Manifeste 065-46100740.xlsx`, new
+`Manifeste 607-55998445 newFormat.xlsx`.
+
+### Solution — normalize at the edges, core untouched
+- **sliceManifest.js**: right after `sheet_to_json`, if row 5 holds a
+  "Receiver Addresse" header (tolerant: Address/Adresse, case, punctuation),
+  that column is spliced out of the header and every data row, and each
+  waybill's address is stored in a map. The rest of the function then sees the
+  exact previous 13-column layout. Before `return`, the address is re-attached at
+  **index 22** of each DUM row (after HAWB) and the header gets
+  `Adresse destinataire`. Returns `hasAddressColumn`.
+- **Excel unchanged by construction**: both writers (`addSheetToWorkbook` front,
+  `addSheetToWorkbookXL` back) read fixed columns 0–18.
+- **sheetRowsToPdf** (back): when header index 22 is set, renders it as the last
+  PDF column (22 cols × widths = 790 px ≤ 800 px page). Old manifests → no label
+  → PDF identical to before.
+- **validateManifest.js**: same column strip after header detection, so all
+  existing schemas accept the new layout; `phys()` keeps cell refs pointing at the
+  real column (e.g. a bad Weight is reported in **L**, not K).
+
+### Verification (done with the two reference files)
+- Old manifest, old vs new slicer (git HEAD vs working tree): **identical** output.
+- Old manifest with a synthetic "Receiver Addresse" inserted at G: 14 070 DUM rows
+  compared on columns 0–21 → **0 differences**; per-sheet totals and metadata
+  identical; 14 026/14 026 addresses attached to the right waybill.
+- Real new-format file: 17 sheets, 2175 positions (= declared), 0 missing NGP,
+  11 476/11 476 rows carry an address; names read from Receiver Name.
+- Validator: old file unchanged (PASS); new file BLOCKED before → PASS after.
+- PDF: old → no address column; new → `Adresse destinataire` + values present.
+
+### Files Modified
+- `tyaybi_front/src/utils/sliceManifest.js` — address strip + re-attach (index 22)
+- `tyaybi_front/src/utils/validateManifest.js` — address strip + `phys()` cell refs
+- `tyaybi_back/index.js` — `sheetRowsToPdf` renders the address column
+
+### Not changed
+Other manifest readers (legacy `clients/*` pages, the Model5 page, the separate
+`model_five` app) still assume the old column positions.
+
+---
+
 ## Session 33 — Positions/Pcs cross-check: tolerate small gaps
 
 ### Problem

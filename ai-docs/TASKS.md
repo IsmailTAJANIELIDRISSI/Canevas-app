@@ -1,5 +1,13 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — New manifest format "Receiver Addresse" (col G) — DONE (Session 34)
+
+- Slicer/validator strip the column on input → split & calculation unchanged
+  (proved: 14 070 DUM rows, 0 differences vs the old format).
+- DUM Excel unchanged; DUM PDF gets an `Adresse destinataire` last column.
+- ⚠️ Not yet handled by other manifest readers (legacy clients/*, Model5 page,
+  model_five app) — check if any of them process these manifests.
+
 ## ✅ tyaybi_app — Manifest validation before slicing — DONE (Session 30)
 
 - `validateManifest.js` runs before `sliceManifest` in `handleExecute`.

@@ -1125,8 +1125,13 @@ async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
   const pageWidth = 800,
     pageHeight = 600;
 
-  // Drop the appended totals row (last row) and HAWB column (last col, index 21)
-  const dataRows = rows.slice(0, rows.length - 1).map((r) => r.slice(0, 21));
+  // Drop the appended totals row (last row) and HAWB column (index 21).
+  // Manifests in the newer format carry the receiver address at index 22
+  // (header label set by the slicer) — render it as the last PDF column.
+  const hasAddress = String((rows[0] || [])[22] ?? "").trim() !== "";
+  const dataRows = rows
+    .slice(0, rows.length - 1)
+    .map((r) => (hasAddress ? [...r.slice(0, 21), r[22] ?? ""] : r.slice(0, 21)));
   const colWidths = (dataRows[0] || []).map((_, i) =>
     smallerColsSet.has(i) ? smallerCellWidth : defaultCellWidth,
   );

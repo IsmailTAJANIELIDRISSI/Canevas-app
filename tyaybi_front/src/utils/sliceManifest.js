@@ -28,6 +28,16 @@ function extractColisAndPoidsBrut(text) {
   return { coli: parseFloat(matches[0]), poidbr: parseFloat(matches[1]) };
 }
 
+// Header text normalized for comparison: drop '.'/',', collapse spaces, lowercase.
+function normalizeHeader(cell) {
+  return String(cell ?? '').replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// "Receiver Addresse" (business spelling) — also tolerates Address / Adresse.
+function isAddressHeader(normalized) {
+  return /^receiver addr?ess?e?$/.test(normalized);
+}
+
 /**
  * Resolve NGP code for a single manifest row.
  * Shared between the "current row" pass and the "next row" aggregation pass.
@@ -179,6 +189,29 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
   const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+  // ── Optional "Receiver Addresse" column (business format update) ──────────
+  // Newer manifests insert a "Receiver Addresse" column (e.g. at G). Remove it
+  // from the header row (row 5) and every data row so the rest of this function
+  // sees exactly the previous layout — split and calculation logic unchanged.
+  // Each waybill's address is kept and re-attached to the output rows at the
+  // end, for the DUM PDFs only.
+  const addressByWaybill = new Map();
+  const headerCells = (jsonData[4] || []).map(normalizeHeader);
+  const addressColIdx = headerCells.findIndex(isAddressHeader);
+  const hasAddressColumn = addressColIdx >= 0;
+  if (hasAddressColumn) {
+    const waybillCol = headerCells[0] === 'docket #' ? 2 : 1;
+    for (let r = 4; r < jsonData.length; r++) {
+      const row = jsonData[r];
+      if (!Array.isArray(row) || row.length <= addressColIdx) continue;
+      const [address] = row.splice(addressColIdx, 1);
+      if (r === 4) continue; // header row
+      const waybill = row[waybillCol] != null ? String(row[waybillCol]).trim() : '';
+      const addr = address != null ? String(address).trim() : '';
+      if (waybill && addr && !addressByWaybill.has(waybill)) addressByWaybill.set(waybill, addr);
+    }
+  }
 
   const header = [
     'Identifiant unique du fichier',
@@ -534,7 +567,24 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
     }
   });
 
+  // ── Re-attach receiver address (PDF only) ────────────────────────────────
+  // Stored at index 22, after HAWB. The DUM Excel writers read fixed columns
+  // 0–18, so the generated Excel files are unchanged; the PDF renders it.
+  if (hasAddressColumn) {
+    header[22] = 'Adresse destinataire'; // shared header array → every sheet
+    const mawbPrefix = `${mawbValue} `;
+    for (const sheet of slicedSheets) {
+      for (let r = 1; r < sheet.length - 1; r++) { // skip header + totals row
+        const waybill = typeof sheet[r][4] === 'string'
+          ? sheet[r][4].replace(mawbPrefix, '').trim()
+          : String(sheet[r][4] ?? '').trim();
+        sheet[r][22] = addressByWaybill.get(waybill) || '';
+      }
+    }
+  }
+
   return {
+    hasAddressColumn,
     sheets: sheetsWithTotals,
     mawbValue,
     parvaleur,
