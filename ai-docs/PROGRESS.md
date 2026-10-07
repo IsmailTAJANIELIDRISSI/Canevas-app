@@ -4,6 +4,50 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 36 — Acheminements DUM PDFs use converter.js (same as Excelslice)
+
+### Request
+Acheminements DUM PDFs must show the "Receiver Address" column **between
+"Nom et Prénom" and "CIN"**, exactly like the Excelslice page; the PDF logic must
+be the same as `converter.js` (incl. Arabic). DUM Excel files unchanged.
+(Supersedes the PDF part of Session 34: address was the last column, no Arabic.)
+
+### Solution
+- `sheetRowsToPdf` (back) no longer draws its own table: it shapes rows exactly
+  like Excelslice's `toPdfRow` (slice 0–21, drop HAWB col 21 in HS CODE mode,
+  insert address at index 19 after "Nom et Prénom"), writes a temp .xlsx and calls
+  `convertExcelToPdf` (converter.js) — one PDF engine for both pages, Arabic font
+  included. Signature gains `test` (sliceResult.test); callers pass it
+  (`generate-and-save`, `/lta/sheet-to-pdf`, front `sheetToPdfB64`).
+- DDP footer computed like Excelslice's `handleGeneratePdf`: from the 2-decimal
+  total (was from the raw total — could differ by 1).
+- `sliceManifest.js` mirrors Excelslice's address handling: same detection
+  rule `/^receiver\s*ad+res+e?$/i`, address kept **per source row** and attached
+  before GLOBAL is built (`row[0] + 4`), header label `Receiver Address`.
+- `validateManifest.js` uses the same detection rule (validator and slicer can't
+  disagree on whether the column exists).
+
+### Verification (Manifeste 607-55998445 newFormat.xlsx, 69 632,83 MAD)
+- Split unchanged: old manifest output identical to HEAD; new format 11 510 rows,
+  0 differences on columns 0–21, totals/metadata identical.
+- Excelslice path (toPdfRow → /upload → converter.js) vs Acheminements path on
+  Sheet 1: totals identical (13530.20 / 3830), 322 rows → 0 differences, same page
+  count (4), **identical PDF text** (55 448 chars); order Nom et Prénom <
+  Receiver Address < CIN; 21 Arabic addresses rendered.
+- Validator: old file unchanged; new format PASS.
+
+### Files Modified
+- `tyaybi_back/index.js` — `sheetRowsToPdf` → converter.js; callers pass `test`, DDP
+- `tyaybi_front/src/utils/sliceManifest.js` — Excelslice-identical address handling
+- `tyaybi_front/src/utils/validateManifest.js` — same detection rule
+- `tyaybi_front/src/pages/dashboard/acheminements/index.jsx` — `test` + DDP
+
+### Note
+Both pages now render PDFs with whatever `tyaybi_back/converter.js` is deployed.
+The wider address column (90 px) lives in the user's uncommitted converter.js.
+
+---
+
 ## Session 35 — Acheminements: "Excel GLOBAL" download button
 
 ### Request

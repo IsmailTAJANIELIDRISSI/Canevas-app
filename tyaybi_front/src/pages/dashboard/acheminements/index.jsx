@@ -153,12 +153,12 @@ async function buildSheetWorkbookBuffer(sheetData, sheetName) {
   return workbook.xlsx.writeBuffer();
 }
 
-async function sheetToPdfB64(sheetData, totalPrice, totalDDP) {
+async function sheetToPdfB64(sheetData, totalPrice, totalDDP, test) {
   try {
     const res = await fetch('http://localhost:3000/lta/sheet-to-pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows: sheetData, totalPrice, totalDDP }),
+      body: JSON.stringify({ rows: sheetData, totalPrice, totalDDP, test }),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -284,11 +284,12 @@ async function buildAllFiles(sliceResult, ref, onProgress) {
     const sheet = dumSheets[i];
     const xlsBuf = await buildSheetWorkbookBuffer(sheet.data, sheet.name);
     files.push({ name: `${sheet.name}.xlsx`, data: xlsBuf });
+    // Same totals as Excelslice's handleGeneratePdf: DDP from the 2-decimal total
     const sheetTotalPrice = parseFloat(sheet.totals.value).toFixed(2);
     const sheetTotalDDP = sliceResult.totalvaluee > 0
-      ? Math.round((sliceResult.parvaleur / sliceResult.totalvaluee) * sheet.totals.value)
+      ? Math.round((sliceResult.parvaleur / sliceResult.totalvaluee) * Number(sheetTotalPrice))
       : 0;
-    const pdfB64 = await sheetToPdfB64(sheet.data, sheetTotalPrice, sheetTotalDDP);
+    const pdfB64 = await sheetToPdfB64(sheet.data, sheetTotalPrice, sheetTotalDDP, sliceResult.test);
     if (pdfB64) {
       const pdfBytes = Uint8Array.from(atob(pdfB64), c => c.charCodeAt(0));
       files.push({ name: `${sheet.name}.pdf`, data: pdfBytes });

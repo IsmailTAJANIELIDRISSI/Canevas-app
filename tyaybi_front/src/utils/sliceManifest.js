@@ -28,14 +28,10 @@ function extractColisAndPoidsBrut(text) {
   return { coli: parseFloat(matches[0]), poidbr: parseFloat(matches[1]) };
 }
 
-// Header text normalized for comparison: drop '.'/',', collapse spaces, lowercase.
-function normalizeHeader(cell) {
-  return String(cell ?? '').replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-// "Receiver Addresse" (business spelling) — also tolerates Address / Adresse.
-function isAddressHeader(normalized) {
-  return /^receiver addr?ess?e?$/.test(normalized);
+// "Receiver Address" header cell, any case/spelling (Address, Addresse, Adresse…).
+// Same rule as the Excelslice page (clients/convertpdf.jsx).
+function isReceiverAddress(cell) {
+  return typeof cell === 'string' && /^receiver\s*ad+res+e?$/i.test(cell.trim());
 }
 
 /**
@@ -190,26 +186,22 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
   const worksheet = workbook.Sheets[sheetName];
   const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-  // ── Optional "Receiver Addresse" column (business format update) ──────────
-  // Newer manifests insert a "Receiver Addresse" column (e.g. at G). Remove it
-  // from the header row (row 5) and every data row so the rest of this function
-  // sees exactly the previous layout — split and calculation logic unchanged.
-  // Each waybill's address is kept and re-attached to the output rows at the
-  // end, for the DUM PDFs only.
-  const addressByWaybill = new Map();
-  const headerCells = (jsonData[4] || []).map(normalizeHeader);
-  const addressColIdx = headerCells.findIndex(isAddressHeader);
-  const hasAddressColumn = addressColIdx >= 0;
+  // ── Optional "Receiver Address" column (business format update) ───────────
+  // Newer manifests insert a "Receiver Address" column (e.g. at G). Remove it
+  // from the header row and every row below so the rest of this function sees
+  // exactly the previous layout — split and calculation logic unchanged. Each
+  // source row's address is kept and put back on the DUM rows for the PDFs.
+  // Mirrors the Excelslice page (clients/convertpdf.jsx).
+  const receiverAddresses = {}; // source row index -> address
+  const addrHeaderRow = jsonData.findIndex((row) => Array.isArray(row) && row.some(isReceiverAddress));
+  const hasAddressColumn = addrHeaderRow !== -1;
   if (hasAddressColumn) {
-    const waybillCol = headerCells[0] === 'docket #' ? 2 : 1;
-    for (let r = 4; r < jsonData.length; r++) {
-      const row = jsonData[r];
-      if (!Array.isArray(row) || row.length <= addressColIdx) continue;
-      const [address] = row.splice(addressColIdx, 1);
-      if (r === 4) continue; // header row
-      const waybill = row[waybillCol] != null ? String(row[waybillCol]).trim() : '';
-      const addr = address != null ? String(address).trim() : '';
-      if (waybill && addr && !addressByWaybill.has(waybill)) addressByWaybill.set(waybill, addr);
+    const addrCol = jsonData[addrHeaderRow].findIndex(isReceiverAddress);
+    for (let r = addrHeaderRow; r < jsonData.length; r++) {
+      if (Array.isArray(jsonData[r])) {
+        receiverAddresses[r] = jsonData[r][addrCol];
+        jsonData[r].splice(addrCol, 1);
+      }
     }
   }
 
@@ -237,6 +229,8 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
     'Carton or bag N°',
     'HAWB',
   ];
+  // Index 22 — read only by the PDF (DUM Excel writers stop at column 18)
+  if (hasAddressColumn) header.push('Receiver Address');
 
   // Build NGP map from bddngp.json
   const ngpMap = {};
@@ -451,6 +445,12 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
     }
   });
 
+  // ── Receiver Address → index 21 of each DUM row (output index 22) ───────
+  // row[0] still holds the source index (i - 4) here, before renumbering.
+  if (hasAddressColumn) {
+    newdata.forEach(([row]) => row.push(receiverAddresses[row[0] + 4] ?? ''));
+  }
+
   // ── Build GLOBAL sheet (sheet index 0) ──────────────────────────────────
   let cpt = 1;
   newdata.forEach(data => {
@@ -484,7 +484,7 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
         `sheet${sheetCount}`, 1, '', 216,
         row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10],
         row[11], row[12], row[13], row[14], row[15], row[16], row[17],
-        row[18], row[19], row[20],
+        row[18], row[19], row[20], ...(hasAddressColumn ? [row[21]] : []),
       ]);
     } else {
       // Count how many more rows share the same carton group
@@ -504,7 +504,7 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
           `sheet${sheetCount}`, 1, '', 216,
           row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10],
           row[11], row[12], row[13], row[14], row[15], row[16], row[17],
-          row[18], row[19], row[20],
+          row[18], row[19], row[20], ...(hasAddressColumn ? [row[21]] : []),
         ]);
         continue;
       }
@@ -513,7 +513,7 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
         '', row[0], 0, 216,
         row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10],
         row[11], row[12], row[13], row[14], row[15], row[16], row[17],
-        row[18], row[19], row[20],
+        row[18], row[19], row[20], ...(hasAddressColumn ? [row[21]] : []),
       ]);
     }
   }
@@ -566,22 +566,6 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
       sheet[1][2] = pos - poslastsheetcount;
     }
   });
-
-  // ── Re-attach receiver address (PDF only) ────────────────────────────────
-  // Stored at index 22, after HAWB. The DUM Excel writers read fixed columns
-  // 0–18, so the generated Excel files are unchanged; the PDF renders it.
-  if (hasAddressColumn) {
-    header[22] = 'Adresse destinataire'; // shared header array → every sheet
-    const mawbPrefix = `${mawbValue} `;
-    for (const sheet of slicedSheets) {
-      for (let r = 1; r < sheet.length - 1; r++) { // skip header + totals row
-        const waybill = typeof sheet[r][4] === 'string'
-          ? sheet[r][4].replace(mawbPrefix, '').trim()
-          : String(sheet[r][4] ?? '').trim();
-        sheet[r][22] = addressByWaybill.get(waybill) || '';
-      }
-    }
-  }
 
   return {
     hasAddressColumn,

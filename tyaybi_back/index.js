@@ -1096,153 +1096,38 @@ async function buildGeneratedExcelXL(sliceResult, ref) {
   return workbook.xlsx.writeBuffer();
 }
 
-async function sheetRowsToPdf(rows, totalPrice, totalDDP) {
-  const { PDFDocument, rgb } = require("pdf-lib");
-  const fk = require("@pdf-lib/fontkit");
-  const pdfDoc = await PDFDocument.create();
-  pdfDoc.registerFontkit(fk);
-  const fontBytes = fs.readFileSync(
-    path.join(__dirname, "fonts", "NotoSans-Regular.ttf"),
+// DUM PDF for the Acheminements page. Same engine as the Excelslice page: the
+// rows are shaped exactly like convertpdf.jsx's toPdfRow, written to a temporary
+// .xlsx and handed to converter.js (convertExcelToPdf) — one PDF logic for both
+// pages, Arabic font included.
+//   rows  : sheet rows (header, data…, totals) — totals row is not drawn
+//   test  : sliceResult.test (HS CODE mode) — drops the HAWB column like Excelslice
+const PDF_NAME_COL = 18;    // "Nom et Prénom"
+const PDF_HAWB_COL = 21;    // dropped from the PDF in HS CODE mode
+const PDF_ADDRESS_COL = 22; // "Receiver Address" (only in the newer manifest format)
+
+async function sheetRowsToPdf(rows, totalPrice, totalDDP, test = false) {
+  const hasAddress = (rows[0] || []).length > PDF_ADDRESS_COL;
+  const toPdfRow = (row) => {
+    const pdfRow = row.slice(0, PDF_ADDRESS_COL).filter((_, c) => !(test && c === PDF_HAWB_COL));
+    if (hasAddress) pdfRow.splice(PDF_NAME_COL + 1, 0, row[PDF_ADDRESS_COL] ?? "");
+    return pdfRow;
+  };
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("DUM");
+  for (let i = 0; i < rows.length - 1; i++) worksheet.addRow(toPdfRow(rows[i]));
+
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `dum_${Date.now()}_${Math.random().toString(36).slice(2)}.xlsx`,
   );
-  const font = await pdfDoc.embedFont(fontBytes);
-
-  // Match converter.js exactly (800×600, fontSize 2)
-  // smallerWidthColumns from converter.js (1-indexed) → 0-indexed:
-  // [1,2,3,4,8,9,10,11,12,13,14,15,16,17,18,20] → [0,1,2,3,7,8,9,10,11,12,13,14,15,16,17,19]
-  const smallerColsSet = new Set([
-    0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19,
-  ]);
-  const defaultCellWidth = 50;
-  const smallerCellWidth = 30;
-  const fontSize = 2;
-  const cellPadding = 2;
-  const tableTopPadding = 20;
-  const tableLeftPadding = 10;
-  const headerRowHeight = 20;
-  const dataRowHeight = fontSize + 2 * cellPadding;
-  const spaceBetweenTableAndTotals = 20;
-  const minimumSpaceForTotals = 30;
-  const pageWidth = 800,
-    pageHeight = 600;
-
-  // Drop the appended totals row (last row) and HAWB column (index 21).
-  // Manifests in the newer format carry the receiver address at index 22
-  // (header label set by the slicer) — render it as the last PDF column.
-  const hasAddress = String((rows[0] || [])[22] ?? "").trim() !== "";
-  const dataRows = rows
-    .slice(0, rows.length - 1)
-    .map((r) => (hasAddress ? [...r.slice(0, 21), r[22] ?? ""] : r.slice(0, 21)));
-  const colWidths = (dataRows[0] || []).map((_, i) =>
-    smallerColsSet.has(i) ? smallerCellWidth : defaultCellWidth,
-  );
-
-  let page = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - tableTopPadding;
-
-  function truncate(text, maxWidth) {
-    let t = text;
-    while (
-      t.length > 0 &&
-      font.widthOfTextAtSize(t, fontSize) > maxWidth - 2 * cellPadding
-    ) {
-      t = t.slice(0, -1);
-    }
-    return t;
+  await workbook.xlsx.writeFile(tmpPath);
+  try {
+    return await convertExcelToPdf(tmpPath, totalPrice, totalDDP);
+  } finally {
+    fs.unlink(tmpPath, () => {});
   }
-
-  // Header row
-  const headerRow = dataRows[0] || [];
-  let xPos = tableLeftPadding;
-  headerRow.forEach((cell, ci) => {
-    const cellText = cell != null ? String(cell).trim() : "";
-    const cellWidth = colWidths[ci] ?? smallerCellWidth;
-    page.drawRectangle({
-      x: xPos,
-      y: y - headerRowHeight,
-      width: cellWidth,
-      height: headerRowHeight,
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 0.5,
-    });
-    const truncated = truncate(cellText, cellWidth);
-    if (truncated) {
-      const tw = font.widthOfTextAtSize(truncated, fontSize);
-      page.drawText(truncated, {
-        x: xPos + (cellWidth - tw) / 2,
-        y: y - headerRowHeight + (headerRowHeight - fontSize) / 2,
-        size: fontSize,
-        font,
-        color: rgb(0, 0, 0),
-      });
-    }
-    xPos += cellWidth;
-  });
-  y -= headerRowHeight;
-
-  // Data rows
-  for (let ri = 1; ri < dataRows.length; ri++) {
-    const row = dataRows[ri];
-    let maxH = 0;
-    let x = tableLeftPadding;
-    row.forEach((cell, ci) => {
-      // Falsy check matches converter.js: cell.value ? ... : ""
-      // This means 0 renders as blank in PDF (same as old behavior)
-      const cellText = cell ? String(cell).trim() : "";
-      const cellWidth = colWidths[ci] ?? smallerCellWidth;
-      maxH = Math.max(maxH, dataRowHeight);
-      page.drawRectangle({
-        x,
-        y: y - dataRowHeight,
-        width: cellWidth,
-        height: dataRowHeight,
-        borderColor: rgb(0, 0, 0),
-        borderWidth: 0.5,
-      });
-      const truncated = truncate(cellText, cellWidth);
-      if (truncated) {
-        page.drawText(truncated, {
-          x: x + cellPadding,
-          y: y - dataRowHeight + cellPadding,
-          size: fontSize,
-          font,
-          color: rgb(0, 0, 0),
-        });
-      }
-      x += cellWidth;
-    });
-    y -= maxH;
-    if (y <= tableTopPadding) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      y = pageHeight - tableTopPadding;
-    }
-  }
-
-  // Totals footer (same as converter.js)
-  if (y < tableTopPadding + minimumSpaceForTotals) {
-    page = pdfDoc.addPage([pageWidth, pageHeight]);
-    y = pageHeight - tableTopPadding;
-  }
-  y -= spaceBetweenTableAndTotals;
-  if (totalPrice != null) {
-    page.drawText(`Total Value DDP: ${totalPrice}`, {
-      x: tableLeftPadding,
-      y,
-      size: 4,
-      font,
-      color: rgb(0, 0, 0),
-    });
-  }
-  if (totalDDP != null) {
-    page.drawText(`Freight Included: ${totalDDP}`, {
-      x: tableLeftPadding,
-      y: y - fontSize - 5,
-      size: 4,
-      font,
-      color: rgb(0, 0, 0),
-    });
-  }
-
-  return pdfDoc.save();
 }
 
 // ─── Generate all files for one LTA and write them to folderPath ──────────────
@@ -1340,18 +1225,20 @@ app.post("/lta/generate-and-save", async (req, res) => {
 
       // pdf
       try {
+        // Same totals as Excelslice's handleGeneratePdf: DDP from the 2-decimal total
         const sheetTotalPrice = parseFloat(sheet.totals.value).toFixed(2);
         const sheetTotalDDP =
           sliceResult.totalvaluee > 0
             ? Math.round(
                 (sliceResult.parvaleur / sliceResult.totalvaluee) *
-                  sheet.totals.value,
+                  Number(sheetTotalPrice),
               )
             : 0;
         const pdfBytes = await sheetRowsToPdf(
           sheet.data,
           sheetTotalPrice,
           sheetTotalDDP,
+          sliceResult.test,
         );
         write(`${sheet.name}.pdf`, Buffer.from(pdfBytes));
       } catch (e) {
@@ -1554,9 +1441,9 @@ app.post("/lta/save-results", (req, res) => {
 });
 
 // Convert a DUM sheet (rows[][]) to PDF and return base64
-// Body: { rows: any[][], sheetName?: string, totalPrice?: string, totalDDP?: number }
+// Body: { rows: any[][], sheetName?: string, totalPrice?: string, totalDDP?: number, test?: boolean }
 app.post("/lta/sheet-to-pdf", async (req, res) => {
-  const { rows, totalPrice, totalDDP } = req.body;
+  const { rows, totalPrice, totalDDP, test } = req.body;
   if (!rows || !Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ error: "rows[] is required" });
   }
@@ -1565,6 +1452,7 @@ app.post("/lta/sheet-to-pdf", async (req, res) => {
       rows,
       totalPrice ?? null,
       totalDDP ?? null,
+      !!test,
     );
     res.json({ pdfB64: Buffer.from(pdfBytes).toString("base64") });
   } catch (e) {

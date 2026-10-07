@@ -153,12 +153,13 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
       headerIdx + 1);
   }
 
-  // ── Optional "Receiver Addresse" column (business format update) ──────────
-  // Drop it before schema matching so every schema accepts the newer layout —
-  // same rule as sliceManifest. phys() maps a column back to its real
-  // spreadsheet position so cell refs in messages stay accurate.
-  const addrIdx = (jsonData[headerIdx] || []).map(normH)
-    .findIndex((h) => /^receiver addr?ess?e?$/.test(h));
+  // ── Optional "Receiver Address" column (business format update) ───────────
+  // Drop it before schema matching so every schema accepts the newer layout.
+  // Detection rule identical to sliceManifest and the Excelslice page, so a
+  // file this validator accepts is always sliced with the same columns.
+  // phys() maps a column back to its real spreadsheet position (cell refs).
+  const addrIdx = (jsonData[headerIdx] || [])
+    .findIndex((c) => typeof c === 'string' && /^receiver\s*ad+res+e?$/i.test(c.trim()));
   if (addrIdx >= 0) {
     for (let i = headerIdx; i < jsonData.length; i++) {
       if (Array.isArray(jsonData[i]) && jsonData[i].length > addrIdx) jsonData[i].splice(addrIdx, 1);

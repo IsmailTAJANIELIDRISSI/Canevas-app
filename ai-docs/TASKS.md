@@ -1,5 +1,12 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Acheminements DUM PDFs = Excelslice (converter.js) — DONE (Session 36)
+
+- One PDF engine (converter.js) for both pages: address between "Nom et Prénom"
+  and "CIN", Arabic supported. Proved identical PDF text vs Excelslice.
+- ⚠️ `converter.js` / `convertpdf.jsx` changes are still uncommitted (user's work);
+  commit them so deployed machines get the 90 px address column on both pages.
+
 ## ✅ tyaybi_app — New manifest format "Receiver Addresse" (col G) — DONE (Session 34)
 
 - Slicer/validator strip the column on input → split & calculation unchanged
