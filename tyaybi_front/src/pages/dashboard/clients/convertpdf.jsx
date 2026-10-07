@@ -13,6 +13,13 @@ import mammoth from 'mammoth';
 
 GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
 
+// Column indexes in the sliced sheet rows
+const NAME_COL = 18; // "Nom et Prénom"
+const HAWB_COL = 21; // dropped from the PDF in HS CODE mode
+// Receiver Address is kept at the end of the sliced sheet rows (index 22), so the
+// Excel exports (columns 0-19) never see it; the PDF moves it right after "Nom et Prénom".
+const ADDRESS_COL = 22;
+
 export function Clients() {
   const [exclusionWaybills, setExclusionWaybills] = useState([]);
   const [pdfStatus, setPdfStatus] = useState({});
@@ -40,6 +47,8 @@ export function Clients() {
   const [loading,setLoading]=useState(false)
   const [loadingall,setIsLoadingall]=useState(false)
   const [test,setTest]=useState(false)
+  // Column index of "Receiver Address" in the uploaded file, -1 when the file has none
+  const [receiverAddressCol, setReceiverAddressCol] = useState(-1)
 
   const [loadingDownload,setLoadingDownload]=useState(false)
   const [loadingDownloads,setLoadingDownloads]=useState(false)
@@ -295,6 +304,30 @@ function extractColisAndPoidsBrut(text) {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Remove the "Receiver Address" column (any case/spelling, leading/trailing spaces ignored)
+      // so the existing column indexes keep working whatever the template.
+      // Its values are kept per source row so the PDF can show them again.
+      const isReceiverAddress = (cell) =>
+        typeof cell === 'string' && /^receiver\s*ad+res+e?$/i.test(cell.trim());
+
+      const receiverAddresses = {}; // source row index -> address
+      const addrHeaderRow = jsonData.findIndex(
+        (row) => Array.isArray(row) && row.some(isReceiverAddress)
+      );
+      const hasReceiverAddress = addrHeaderRow !== -1;
+      let addrCol = -1;
+      if (hasReceiverAddress) {
+        addrCol = jsonData[addrHeaderRow].findIndex(isReceiverAddress);
+        for (let r = addrHeaderRow; r < jsonData.length; r++) {
+          if (Array.isArray(jsonData[r])) {
+            receiverAddresses[r] = jsonData[r][addrCol];
+            jsonData[r].splice(addrCol, 1);
+          }
+        }
+      }
+      setReceiverAddressCol(addrCol);
+
       const header = [
         'Identifiant unique du fichier', "N° ordre de l'article", "Nombre Contenants",
         "Type Contenant", "Marque (N° Envoi)", "Code NGP(à 10 chiffres)",
@@ -304,6 +337,7 @@ function extractColisAndPoidsBrut(text) {
         "Code Référence Accord Article", "Code Référence Franchise",
         "Nom et Prénom", "CIN", "Carton or bag N°", "HAWB"
       ];
+      if (hasReceiverAddress) header.push("Receiver Address");
       const ngpMap = {};
       for (const item of bddngp.Feuil1) {
         // Normalize the designation by removing trailing numbers and spaces
@@ -1123,7 +1157,12 @@ function extractColisAndPoidsBrut(text) {
       }
       return row; // Returning the row for consistency
   });
-  
+
+      // row[0] still holds the source index (i - 4) here, before renumbering
+      if (hasReceiverAddress) {
+        newdata.forEach(([row]) => row.push(receiverAddresses[row[0] + 4] ?? ''));
+      }
+
       setTotalvaluee(accumulatedTotalValue);
   
       let cpt = 1;
@@ -1162,7 +1201,7 @@ function extractColisAndPoidsBrut(text) {
   
         if (currentSheet.length === 0) {
           currentSheet.push(header);
-          currentSheet.push([`sheet${sheetCount}`, 1, '', 216, row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20]]);
+          currentSheet.push([`sheet${sheetCount}`, 1, '', 216, row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], ...(hasReceiverAddress ? [row[21]] : [])]);
         } else {
           let cof = 0;
           newdata.slice(i + 1).some(data => {
@@ -1178,10 +1217,10 @@ function extractColisAndPoidsBrut(text) {
             c = 1;
             currentSheet.push(header);
             sheetCount += 1;
-            currentSheet.push([`sheet${sheetCount}`, 1, '', 216,row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20]]);
+            currentSheet.push([`sheet${sheetCount}`, 1, '', 216,row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], ...(hasReceiverAddress ? [row[21]] : [])]);
             continue;
           }
-          currentSheet.push(['', row[0], 0, 216, row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20]]);
+          currentSheet.push(['', row[0], 0, 216, row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], row[13], row[14], row[15], row[16], row[17], row[18], row[19], row[20], ...(hasReceiverAddress ? [row[21]] : [])]);
         }
       }
   
@@ -2003,6 +2042,16 @@ function extractColisAndPoidsBrut(text) {
   
   
 
+  // Row sent to the PDF: HAWB dropped in HS CODE mode, Receiver Address put
+  // right after "Nom et Prénom"
+  const toPdfRow = (row) => {
+    const pdfRow = row.slice(0, ADDRESS_COL).filter((_, c) => !(test && c === HAWB_COL));
+    if (receiverAddressCol !== -1) {
+      pdfRow.splice(NAME_COL + 1, 0, row[ADDRESS_COL] ?? '');
+    }
+    return pdfRow;
+  };
+
   const handleGeneratePdf = async (sheetData, sheetName) => {
     setPdfStatus((prevStatus) => ({
       ...prevStatus,
@@ -2012,28 +2061,11 @@ function extractColisAndPoidsBrut(text) {
     try {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(sheetName);
-if(test){
-  // Add headers
-  worksheet.addRow(sheetData[0].slice(0,-1)); // Assuming first row is header
-  
-  // Add data rows
+      // First row is the header, last row is the totals (sent separately)
+      for (let i = 0; i < sheetData.length - 1; i++) {
+        worksheet.addRow(toPdfRow(sheetData[i]));
+      }
 
-  for (let i = 1; i < sheetData.length-1; i++) {
-    
-    worksheet.addRow(sheetData[i].slice(0,-1));
-  }
-}else{
-  // Add headers
-  worksheet.addRow(sheetData[0]); // Assuming first row is header
-  
-  // Add data rows
-
-  for (let i = 1; i < sheetData.length-1; i++) {
-    
-    worksheet.addRow(sheetData[i]);
-  }
-}
-    
       const totalPrice = parseFloat(sheetData[sheetData.length-1][10]).toFixed(2);
       
       const totalDDP = Math.round((parvaleur/totalvaluee) *totalPrice);
@@ -2223,25 +2255,11 @@ if(test){
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(sheet.name);
-  if(test){
-    
-    
-      // Add headers and data rows
-      worksheet.addRow(sheet.data[0].slice(0,-1));
-      for (let i = 1; i < sheet.data.length - 1; i++) {
-        worksheet.addRow(sheet.data[i].slice(0,-1));
-      }
-  }
-  else{
-    
+    // First row is the header, last row is the totals (sent separately)
+    for (let i = 0; i < sheet.data.length - 1; i++) {
+      worksheet.addRow(toPdfRow(sheet.data[i]));
+    }
 
-     // Add headers and data rows
-     worksheet.addRow(sheet.data[0]);
-     for (let i = 1; i < sheet.data.length - 1; i++) {
-       worksheet.addRow(sheet.data[i]);
-     }
-  }
-   
   
     const totalPrice = parseFloat(sheet.data[sheet.data.length - 1][10]).toFixed(2);
 

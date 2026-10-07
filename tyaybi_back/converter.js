@@ -10,6 +10,8 @@ async function convertExcelToPdf(filePath, totalPrice, totalDDP) {
   ];
   const defaultCellWidth = 50;
   const smallerCellWidth = 30;
+  const addressCellWidth = 90; // Receiver Address, wherever it sits
+  const isReceiverAddress = (text) => /^receiver\s*ad+res+e?$/i.test(text);
   const fontSize = 2;
   const cellPadding = 2;
   const tableTopPadding = 20;
@@ -39,18 +41,38 @@ async function convertExcelToPdf(filePath, totalPrice, totalDDP) {
     let pageHeight = 600;
 
     workbook.eachSheet((worksheet, sheetId) => {
-      let page = pdfDoc.addPage([pageWidth, pageHeight]);
+      const headerRow = worksheet.getRow(1);
+
+      // Column widths come from the header: the address column is wider, the others
+      // keep their usual width as if the address column was not there
+      const columnWidths = [];
+      let addressSeen = false;
+      headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const cellText = cell.value ? cell.value.toString().trim() : "";
+        if (isReceiverAddress(cellText)) {
+          addressSeen = true;
+          columnWidths[colNumber] = addressCellWidth;
+          return;
+        }
+        const baseColNumber = addressSeen ? colNumber - 1 : colNumber;
+        columnWidths[colNumber] = smallerWidthColumns.includes(baseColNumber)
+          ? smallerCellWidth
+          : defaultCellWidth;
+      });
+      const widthOf = (colNumber) => columnWidths[colNumber] || defaultCellWidth;
+      const tableWidth = columnWidths.reduce((sum, w) => sum + (w || 0), 0);
+      const sheetPageWidth = Math.max(pageWidth, tableWidth + 2 * tableLeftPadding);
+
+      let page = pdfDoc.addPage([sheetPageWidth, pageHeight]);
       const { width, height } = page.getSize();
       let y = height - tableTopPadding;
 
       // Handle the header row
-      const headerRow = worksheet.getRow(1);
       let xPosition = tableLeftPadding;
 
       headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const cellText = cell.value ? cell.value.toString().trim() : "";
-        const isSmallerWidth = smallerWidthColumns.includes(colNumber);
-        const cellWidth = isSmallerWidth ? smallerCellWidth : defaultCellWidth;
+        const cellWidth = widthOf(colNumber);
 
         page.drawRectangle({
           x: xPosition,
@@ -98,10 +120,7 @@ async function convertExcelToPdf(filePath, totalPrice, totalDDP) {
 
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const cellText = cell.value ? cell.value.toString().trim() : "";
-          const isSmallerWidth = smallerWidthColumns.includes(colNumber);
-          const cellWidth = isSmallerWidth
-            ? smallerCellWidth
-            : defaultCellWidth;
+          const cellWidth = widthOf(colNumber);
           const cellHeight = dataRowHeight;
           maxRowHeight = Math.max(maxRowHeight, cellHeight);
 
@@ -138,7 +157,7 @@ async function convertExcelToPdf(filePath, totalPrice, totalDDP) {
 
         y -= maxRowHeight;
         if (y <= tableTopPadding) {
-          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          page = pdfDoc.addPage([sheetPageWidth, pageHeight]);
           y = height - tableTopPadding;
         }
       });
@@ -146,7 +165,7 @@ async function convertExcelToPdf(filePath, totalPrice, totalDDP) {
       // Check if there's enough space for the totals
       // If not enough space for totals, create a new page
       if (y < tableTopPadding + minimumSpaceForTotals) {
-        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        page = pdfDoc.addPage([sheetPageWidth, pageHeight]);
         y = height - tableTopPadding;
       }
       
