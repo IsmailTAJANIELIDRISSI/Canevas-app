@@ -1,11 +1,15 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — MAWB vision: gemini-2.0-flash (retired, 404) → gemini-3.8-flash — DONE (Session 37)
+
+- Chain: 3.1-flash-lite-preview → 2.5-flash → 3.8-flash (same results on 3 real MAWBs;
+  3.8-flash is the slowest and was overloaded once, so it's last).
+
 ## ✅ tyaybi_app — Acheminements DUM PDFs = Excelslice (converter.js) — DONE (Session 36)
 
 - One PDF engine (converter.js) for both pages: address between "Nom et Prénom"
   and "CIN", Arabic supported. Proved identical PDF text vs Excelslice.
-- ⚠️ `converter.js` / `convertpdf.jsx` changes are still uncommitted (user's work);
-  commit them so deployed machines get the 90 px address column on both pages.
+- `converter.js` / `convertpdf.jsx` (user's work) committed in 89c36b3.
 
 ## ✅ tyaybi_app — New manifest format "Receiver Addresse" (col G) — DONE (Session 34)
 

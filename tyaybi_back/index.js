@@ -383,7 +383,8 @@ app.get("/exchange-rate", async (req, res) => {
 
 // ─── MAWB PDF Metadata Extraction ─────────────────────────────────────────────
 
-const GEMINI_MODEL_FALLBACKS = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-2.0-flash"];
+// gemini-2.0-flash was retired (404) → replaced by gemini-3.8-flash: same results, but slower (13–30 s) so kept last
+const GEMINI_MODEL_FALLBACKS = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-3.8-flash"];
 
 const KNOWN_CURRENCY_RE =
   /\b(CNY|USD|HKD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|MYR|THB|AED|SAR|KWD|QAR|TWD|NZD|ZAR)\b/i;

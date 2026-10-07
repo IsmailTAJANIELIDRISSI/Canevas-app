@@ -4,6 +4,25 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 37 — MAWB vision: gemini-2.0-flash retired → gemini-3.8-flash
+
+### Problem
+`[mawb-extract] supplementCurrencyFretViaVision gemini-2.0-flash failed: 404 …
+models/gemini-2.0-flash is no longer available … use models/gemini-3.8-flash`.
+
+### Solution
+`GEMINI_MODEL_FALLBACKS` (tyaybi_back/index.js) is now
+`["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-3.8-flash"]`.
+
+### Verification
+Ran the real `supplementCurrencyFretViaVision`, one model at a time, on 3 real MAWB PDFs
+(065-46095453 / 065-46095464 / 065-46100736):
+- Every model that answered returned the same values (MYR 31720.00 / 30576.00 / 28080.00).
+- 3.1-flash-lite: 1.7–2.8 s. 2.5-flash: 3.6–15 s (some 503/429). 3.8-flash: 13–29 s, and
+  503 "high demand" on the first PDF → kept as the last fallback.
+
+---
+
 ## Session 36 — Acheminements DUM PDFs use converter.js (same as Excelslice)
 
 ### Request
