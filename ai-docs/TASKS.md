@@ -1,5 +1,17 @@
 # TASKS.md — Current State and Next Steps
 
+## 🔶 tyaybi_app — Office PC "fetch failed" (Gemini + rates) — FIX APPLIED, TO CONFIRM (Session 40)
+
+- IPv4-first + happy-eyeballs off in the backend; real cause now logged.
+- To do: relaunch Tyaybi_app.bat on the office PC, rerun the 3 LTAs; if it still fails,
+  read the `(cause: …)` part of the log line (ENOTFOUND → DNS, CERT/SELF_SIGNED → proxy
+  SSL inspection, ECONNREFUSED/ETIMEDOUT → firewall/proxy).
+
+## ✅ tyaybi_app — Launcher shows the running version — DONE (Session 39)
+
+- PCs still on the June launcher need ONE manual sync (`git fetch origin ismail` +
+  `git checkout -f -B ismail origin/ismail`), then the .bat keeps itself updated.
+
 ## ✅ tyaybi_app — Acheminements skeleton loading + per-LTA "Réimporter" — DONE (Session 38)
 
 - Cards show a skeleton until fret + rate are loaded; 3 LTAs load in parallel.

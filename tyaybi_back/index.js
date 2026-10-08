@@ -6,8 +6,29 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const dns = require("dns");
+const net = require("net");
 const ExcelJS = require("exceljs");
 const { convertExcelToPdf } = require("./converter");
+
+// ─── Outbound network (Gemini, exchange rates) ───────────────────────────────
+// Node 20's "happy eyeballs" gives each connection attempt only 250 ms before
+// abandoning it — on a slow/busy office link every fetch() then fails with a
+// bare "fetch failed" while the browser works (nodejs/node#54359). Connect over
+// IPv4 first and let each connection use the normal connect timeout instead.
+dns.setDefaultResultOrder("ipv4first");
+net.setDefaultAutoSelectFamily(false);
+
+// fetch() only says "fetch failed": the real network error (ETIMEDOUT,
+// ENOTFOUND, ECONNRESET, certificate…) is in err.cause (AggregateError → .errors).
+function describeFetchError(e) {
+  const c = e?.cause;
+  if (!c) return e?.message ?? String(e);
+  const inner = Array.isArray(c.errors) && c.errors.length
+    ? c.errors.map((x) => `${x.code || x.name}: ${x.message}`).join(" | ")
+    : `${c.code || c.name}: ${c.message}`;
+  return `${e.message} (cause: ${inner})`;
+}
 
 const app = express();
 const PORT = 3000;
@@ -377,7 +398,9 @@ app.get("/exchange-rate", async (req, res) => {
 
     res.status(502).json({ error: `MAD rate not found for ${currency}` });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    const detail = describeFetchError(e);
+    console.error(`[exchange-rate] ${currency} → MAD failed: ${detail}`);
+    res.status(502).json({ error: detail });
   }
 });
 
@@ -543,9 +566,10 @@ Respond ONLY in this exact JSON (no markdown):
           fretValue: fretValue || null,
         };
       } catch (e) {
-        log(`[mawb-extract] Gemini ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed: ${e.message}`);
+        log(`[mawb-extract] Gemini ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed: ${describeFetchError(e)}`);
         if (attempt < GEMINI_MAX_ATTEMPTS && isRetryableGeminiError(e.message)) {
-          const delayMs = parseGeminiRetryDelayMs(e.message) ?? GEMINI_DEFAULT_RETRY_MS * attempt;
+          // + random jitter (Gemini docs) so LTAs loading in parallel don't all retry at the same instant
+          const delayMs = (parseGeminiRetryDelayMs(e.message) ?? GEMINI_DEFAULT_RETRY_MS * attempt) + Math.floor(Math.random() * 1500);
           log(`[mawb-extract] waiting ${Math.round(delayMs / 1000)}s before retrying ${modelName}...`);
           await sleep(delayMs);
           continue;

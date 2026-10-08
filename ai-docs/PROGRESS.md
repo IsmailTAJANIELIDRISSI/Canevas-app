@@ -4,6 +4,54 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 40 — Office PC: every Gemini / rate call fails with "fetch failed"
+
+### Problem
+On the office PC (`\\10.0.0.15\partage`) every Gemini attempt (all 3 models) failed
+with `fetch failed`, and rates showed "Taux indisponible". Same code works on the
+dev PC. `fetch failed` = Node-side network error (Google never answered), the real
+reason is hidden in `err.cause`.
+
+### Solution (`tyaybi_back/index.js`)
+- `dns.setDefaultResultOrder("ipv4first")` + `net.setDefaultAutoSelectFamily(false)`:
+  Node 20's happy-eyeballs gives each connection attempt only 250 ms then abandons
+  it → on a slow/busy link all fetches fail while the browser works (nodejs/node#54359).
+- `describeFetchError(e)` logs the real cause (code + address, AggregateError
+  `.errors`) in Gemini attempts and `/exchange-rate` errors.
+- Random jitter (0–1.5 s) on Gemini retry delays (Gemini docs) so parallel LTAs
+  don't retry in lockstep.
+
+### Verification (dev PC)
+Settings active (`autoSelectFamily=false`, `ipv4first`); Gemini + rate calls still work;
+dead address now logs `fetch failed (cause: UND_ERR_CONNECT_TIMEOUT: … 10.255.255.1:443 …)`.
+HKD rate: BAM has no HKD (404) → falls back to frankfurter blended (works).
+⚠️ Not reproducible here — if the office PC still fails, the new log line gives the cause.
+
+---
+
+## Session 39 — Launcher shows the running version (Tyaybi_app.bat)
+
+### Problem
+Another PC kept an old version: its `Tyaybi_app.bat` was the June one (before the
+git sync was added in 4c3ea53), so it never pulled — not even the new .bat.
+
+### Solution
+- `Tyaybi_app.bat`: `cd /d "%~dp0"`; sync with `git checkout -f -B ismail origin/ismail`
+  + `git clean -fd`; the sync runs inside one parsed if-block ending with `goto start`,
+  so when the pull rewrites the .bat the NEW file takes over; prints
+  "Mise a jour : old -> new" + new commits (or "Deja a jour") and a VERSION banner
+  (hash, message, date). `chcp 65001` for accents.
+- `.gitattributes`: `*.bat text eol=crlf` (cmd labels/goto misbehave with LF-only files).
+- `Tyaybi_dev.bat` (local, gitignored): same VERSION banner + branch/ahead status +
+  number of uncommitted files.
+
+### Verification (scratch clones, servers neutralized)
+Self-update to a .bat with all offsets shifted ✅, local edits + stray files wiped ✅,
+"Deja a jour" on 2nd run ✅, offline → warning + version shown ✅, PC with the previous
+launcher (a6475d6) switches cleanly ✅.
+
+---
+
 ## Session 38 — Acheminements: skeleton loading + per-LTA "Réimporter"; gemini-3.8-flash first
 
 ### Request
