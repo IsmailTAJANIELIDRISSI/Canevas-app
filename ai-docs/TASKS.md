@@ -1,9 +1,14 @@
 # TASKS.md — Current State and Next Steps
 
-## ✅ tyaybi_app — MAWB vision: gemini-2.0-flash (retired, 404) → gemini-3.8-flash — DONE (Session 37)
+## ✅ tyaybi_app — Acheminements skeleton loading + per-LTA "Réimporter" — DONE (Session 38)
 
-- Chain: 3.1-flash-lite-preview → 2.5-flash → 3.8-flash (same results on 3 real MAWBs;
-  3.8-flash is the slowest and was overloaded once, so it's last).
+- Cards show a skeleton until fret + rate are loaded; 3 LTAs load in parallel.
+- "↻ Réimporter cette LTA" on cards with missing fret / rate, errors or folder warnings.
+
+## ✅ tyaybi_app — MAWB vision: gemini-2.0-flash (retired, 404) → gemini-3.8-flash — DONE (Sessions 37–38)
+
+- Chain (Session 38, user's choice): 3.8-flash → 3.1-flash-lite-preview → 2.5-flash.
+  3.8-flash is the slowest (13–30 s) and can 503 → up to ~70 s before falling back.
 
 ## ✅ tyaybi_app — Acheminements DUM PDFs = Excelslice (converter.js) — DONE (Session 36)
 

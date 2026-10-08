@@ -366,15 +366,64 @@ async function downloadSummaryOnly(sliceResult) {
 
 // ─── exchange rate ────────────────────────────────────────────────────────────
 
-async function fetchExchangeRate(currency) {
-  try {
-    const res = await fetch(`http://localhost:3000/exchange-rate?from=${currency}`);
-    if (!res.ok) throw new Error('non-ok');
-    const data = await res.json();
-    return data.rates?.MAD || null;
-  } catch {
-    return null;
+// `attempts` > 1 retries transient failures (rate providers / network glitches)
+async function fetchExchangeRate(currency, attempts = 1) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(`http://localhost:3000/exchange-rate?from=${currency}`);
+      if (!res.ok) throw new Error('non-ok');
+      const data = await res.json();
+      if (data.rates?.MAD) return data.rates.MAD;
+    } catch { /* retry below */ }
+    if (i < attempts) await new Promise(r => setTimeout(r, 1000 * i));
   }
+  return null;
+}
+
+// ─── LTA loading (scan + MAWB extraction + rate) ──────────────────────────────
+
+const RATE_ATTEMPTS = 3;
+const SCAN_CONCURRENCY = 3; // LTAs loaded in parallel (each one may call Gemini)
+
+async function runWithConcurrency(items, limit, worker) {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await worker(items[next++]);
+  });
+  await Promise.all(lanes);
+}
+
+// Turn one /lta/scan result into a card
+function scanResultToCard(ref, r) {
+  const card = makeCard(ref);
+  if (!r?.found) {
+    return { ...card, status: 'error', error: r?.error || 'Dossier MAWB introuvable.' };
+  }
+  // Build blob URL from PDF base64
+  let pdfBlobUrl = null;
+  if (r.pdfB64) {
+    const bytes = Uint8Array.from(atob(r.pdfB64), c => c.charCodeAt(0));
+    const blob  = new Blob([bytes], { type: 'application/pdf' });
+    pdfBlobUrl  = URL.createObjectURL(blob);
+  }
+
+  return {
+    ...card,
+    status: 'ready',
+    manifestB64: r.manifestB64,
+    manifestName: r.manifestName,
+    manifestSrcPath: r.manifestSrcPath || null,
+    pdfB64: r.pdfB64,
+    pdfName: r.pdfName,
+    pdfSrcPath: r.pdfSrcPath || null,
+    pdfBlobUrl,
+    // Auto-fill currency and fret from extracted metadata (if available)
+    currency: r.mawbCurrency || 'HKD',  // default to HKD
+    fret: r.fretValue || '',
+    warning: r.warning || null,
+    manifestMissing: r.manifestMissing || false,
+    refMismatch: r.refMismatch || false,
+  };
 }
 
 // ─── card initial state ───────────────────────────────────────────────────────
@@ -383,6 +432,7 @@ function makeCard(ref) {
   return {
     ref,
     status: 'idle',         // idle | loading | ready | processing | done | error
+    loadingStep: null,      // text under the skeleton while status === 'loading'
     manifestB64: null,
     manifestName: null,
     manifestSrcPath: null,
@@ -510,76 +560,63 @@ export default function Acheminements() {
 
   // ── scan ─────────────────────────────────────────────────────────────────
 
-  const handleScan = async () => {
-    const refs = ltaInput
-      .split(/[\n,]+/)
-      .map(r => r.trim())
-      .filter(Boolean);
-    if (!refs.length) return;
-    if (!partagePath) return alert('Veuillez renseigner le chemin PARTAGE.');
+  // Load ONE LTA: folder scan + MAWB fret/devise extraction, then the exchange
+  // rate. The card stays a skeleton (status 'loading') until both are done.
+  // `keep` = fields carried over from the previous card (reimport).
+  const loadLta = useCallback(async (ref, keep = {}) => {
+    updateCard(ref, { status: 'loading', loadingStep: 'Recherche du dossier et extraction du fret (MAWB)…' });
 
-    setScanning(true);
-
+    let card;
     try {
       const res = await fetch('http://localhost:3000/lta/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partagePath, refs }),
+        body: JSON.stringify({ partagePath, refs: [ref] }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { results } = await res.json();
-
-      const newCards = results.map(r => {
-        const card = makeCard(r.ref);
-        if (!r.found) {
-          return { ...card, status: 'error', error: 'Dossier MAWB introuvable.' };
-        }
-        // Build blob URL from PDF base64
-        let pdfBlobUrl = null;
-        if (r.pdfB64) {
-          const bytes = Uint8Array.from(atob(r.pdfB64), c => c.charCodeAt(0));
-          const blob  = new Blob([bytes], { type: 'application/pdf' });
-          pdfBlobUrl  = URL.createObjectURL(blob);
-        }
-        
-        // Auto-fill currency and fret from extracted metadata (if available)
-        const extractedCurrency = r.mawbCurrency || 'HKD';  // default to HKD
-        const extractedFret = r.fretValue || '';
-        
-        return {
-          ...card,
-          status: 'ready',
-          manifestB64: r.manifestB64,
-          manifestName: r.manifestName,
-          manifestSrcPath: r.manifestSrcPath || null,
-          pdfB64: r.pdfB64,
-          pdfName: r.pdfName,
-          pdfSrcPath: r.pdfSrcPath || null,
-          pdfBlobUrl,
-          currency: extractedCurrency,
-          fret: extractedFret,
-          warning: r.warning || null,
-          manifestMissing: r.manifestMissing || false,
-          refMismatch: r.refMismatch || false,
-        };
-      });
-
-      setCards(newCards);
-      
-      // Auto-fetch exchange rates for cards with extracted fret values
-      setTimeout(() => {
-        newCards.forEach(async (c) => {
-          if (c.fret && !isNaN(parseFloat(c.fret)) && c.currency && /^[A-Z]{3}$/.test(c.currency)) {
-            const rate = await fetchExchangeRate(c.currency);
-            const mad = rate ? parseFloat(c.fret) * rate : null;
-            updateCard(c.ref, { rate, madValue: mad });
-          }
-        });
-      }, 100);
+      card = scanResultToCard(ref, results?.[0]);
     } catch (err) {
-      alert(`Erreur scan: ${err.message}`);
+      card = { ...makeCard(ref), status: 'error', error: `Erreur scan : ${err.message}` };
+    }
+    card = { ...card, ...keep };
+
+    if (card.status === 'ready' && card.fret && !isNaN(parseFloat(card.fret)) && /^[A-Z]{3}$/.test(card.currency)) {
+      updateCard(ref, { loadingStep: `Récupération du taux ${card.currency} → MAD…` });
+      const rate = await fetchExchangeRate(card.currency, RATE_ATTEMPTS);
+      card = { ...card, rate, madValue: rate ? parseFloat(card.fret) * rate : null };
+    }
+
+    setCards(prev => prev.map(c => c.ref === ref ? card : c));
+  }, [partagePath, updateCard]);
+
+  const handleScan = async () => {
+    const refs = [...new Set(ltaInput
+      .split(/[\n,]+/)
+      .map(r => r.trim())
+      .filter(Boolean))];
+    if (!refs.length) return;
+    if (!partagePath) return alert('Veuillez renseigner le chemin PARTAGE.');
+
+    cards.forEach(c => { if (c.pdfBlobUrl) URL.revokeObjectURL(c.pdfBlobUrl); });
+    setCards(refs.map(ref => ({ ...makeCard(ref), status: 'loading' })));
+    setScanning(true);
+    try {
+      await runWithConcurrency(refs, SCAN_CONCURRENCY, ref => loadLta(ref));
     } finally {
       setScanning(false);
     }
+  };
+
+  // Re-scan a single LTA (e.g. fret not extracted, rate unavailable, folder fixed)
+  const handleReimport = (card) => {
+    clearTimeout(rateTimers.current[card.ref]);
+    if (card.pdfBlobUrl) URL.revokeObjectURL(card.pdfBlobUrl);
+    loadLta(card.ref, {
+      blocage: card.blocage,
+      blocageUsdRate: card.blocageUsdRate,
+      blocageHawbs: card.blocageHawbs,
+    });
   };
 
   // ── exchange rate (debounced per card) ───────────────────────────────────
@@ -721,8 +758,10 @@ export default function Acheminements() {
         </CardBody>
       </Card>
 
-      {/* ── LTA Cards ── */}
-      {cards.map(card => (
+      {/* ── LTA Cards (skeleton until fret + rate are loaded) ── */}
+      {cards.map(card => card.status === 'loading' ? (
+        <LtaCardSkeleton key={card.ref} card={card} />
+      ) : (
         <LtaCard
           key={card.ref}
           card={card}
@@ -732,6 +771,7 @@ export default function Acheminements() {
           onBlocageChange={(patch) => updateCard(card.ref, patch)}
           onExecute={() => handleExecute(card)}
           onConfirmWarnings={() => handleExecute(card, true)}
+          onReimport={() => handleReimport(card)}
         />
       ))}
 
@@ -846,7 +886,47 @@ function ManifestValidationPanel({ validation, onConfirm }) {
   );
 }
 
-function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageChange, onConfirmWarnings, partagePath }) {
+// Placeholder shown while an LTA is loading (scan + fret extraction + rate) —
+// same layout as LtaCard so nothing jumps when the real card replaces it.
+function LtaCardSkeleton({ card }) {
+  const bar = 'rounded bg-blue-gray-100';
+  return (
+    <Card className="border border-blue-gray-100">
+      <CardBody className="flex flex-col gap-3 p-5">
+        <div className="flex items-center justify-between">
+          <Typography variant="h6" color="blue-gray">
+            LTA — {card.ref}
+          </Typography>
+          <Chip value="Chargement..." color="amber" size="sm" variant="ghost" />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-blue-gray-500">
+          <Spinner className="h-3 w-3" /> {card.loadingStep || 'Chargement…'}
+        </div>
+        <div className="grid gap-6 animate-pulse" style={{ gridTemplateColumns: '1fr 3fr' }}>
+          <div className="flex flex-col gap-4">
+            <div className={`h-3 w-2/3 ${bar}`} />
+            <div className="flex flex-col gap-2">
+              <div className={`h-3 w-1/3 ${bar}`} />
+              <div className={`h-10 w-full ${bar} rounded-lg`} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className={`h-3 w-1/4 ${bar}`} />
+              <div className={`h-10 w-full ${bar} rounded-lg`} />
+            </div>
+            <div className={`h-3 w-1/2 ${bar}`} />
+            <div className={`h-9 w-44 ${bar} rounded-lg`} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className={`h-3 w-1/3 ${bar}`} />
+            <div className="w-full rounded border border-blue-gray-100 bg-blue-gray-50" style={{ height: '320px' }} />
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageChange, onConfirmWarnings, onReimport, partagePath }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadingIdx, setDownloadingIdx] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -963,6 +1043,16 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
     error: 'Erreur',
   }[card.status] || card.status;
 
+  // Why this LTA should be reimported (null → no "Réimporter" button)
+  let reimportReason = null;
+  if (card.status === 'error') {
+    reimportReason = 'Corrigez le dossier si besoin, puis réimportez cette LTA.';
+  } else if (card.status === 'ready' && !card.rateFetching) {
+    if (!card.fret) reimportReason = "Fret non récupéré depuis le MAWB — saisissez-le ou réimportez cette LTA.";
+    else if (card.rate == null) reimportReason = `Taux de change ${card.currency} → MAD indisponible.`;
+    else if (card.warning) reimportReason = 'Après correction du dossier, réimportez cette LTA.';
+  }
+
   return (
     <Card className="border border-blue-gray-100">
       <CardBody className="flex flex-col gap-3 p-5">
@@ -998,6 +1088,21 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
             </div>
           );
         })()}
+
+        {reimportReason && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <span>{reimportReason}</span>
+            <Button
+              size="sm"
+              color="amber"
+              variant="outlined"
+              onClick={onReimport}
+              className="flex items-center gap-2"
+            >
+              ↻ Réimporter cette LTA
+            </Button>
+          </div>
+        )}
 
         {(card.status === 'ready' || card.status === 'done') && (
           <div className="grid gap-6" style={{ gridTemplateColumns: '1fr 3fr' }}>

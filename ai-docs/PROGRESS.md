@@ -4,6 +4,31 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 38 — Acheminements: skeleton loading + per-LTA "Réimporter"; gemini-3.8-flash first
+
+### Request
+1. Gemini order: 3.8-flash → 3.1-flash-lite → 2.5-flash.
+2. Don't show a half-loaded card ("Taux indisponible"): show a skeleton until the
+   fret and the exchange rate are fetched, then show the LTA.
+3. A "Réimporter" button on the concerned LTA (fret not fetched…) to reload it alone.
+
+### Solution
+- Back (`index.js`): `GEMINI_MODEL_FALLBACKS` reordered; `fetch failed` / `ECONNRESET` /
+  `ETIMEDOUT` are now retryable (the 1st LTA of the user's run lost both models to a
+  network glitch); `/lta/scan` console lines tagged `[mawb-extract <ref>]` (LTAs now
+  load in parallel → interleaved logs).
+- Front (`acheminements/index.jsx`):
+  - `handleScan` creates one `status: 'loading'` card per ref (rendered by
+    `LtaCardSkeleton`, with the current step text) and loads them with
+    `runWithConcurrency(refs, 3, loadLta)`.
+  - `loadLta(ref, keep)` = `/lta/scan` for that single ref → `scanResultToCard` →
+    `fetchExchangeRate(currency, 3 attempts)` → the card replaces its skeleton in one go.
+  - `handleReimport(card)` reruns `loadLta` for that LTA only (keeps BLOCAGE inputs).
+    Banner + "↻ Réimporter cette LTA" shown when: card error, fret missing, rate
+    unavailable, or a folder warning.
+
+---
+
 ## Session 37 — MAWB vision: gemini-2.0-flash retired → gemini-3.8-flash
 
 ### Problem

@@ -383,8 +383,9 @@ app.get("/exchange-rate", async (req, res) => {
 
 // ─── MAWB PDF Metadata Extraction ─────────────────────────────────────────────
 
-// gemini-2.0-flash was retired (404) → replaced by gemini-3.8-flash: same results, but slower (13–30 s) so kept last
-const GEMINI_MODEL_FALLBACKS = ["gemini-3.1-flash-lite-preview", "gemini-2.5-flash", "gemini-3.8-flash"];
+// gemini-2.0-flash was retired (404). gemini-3.8-flash first (user's choice) — slower (13–30 s)
+// and sometimes 503 "high demand", in which case the faster models take over.
+const GEMINI_MODEL_FALLBACKS = ["gemini-3.8-flash", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash"];
 
 const KNOWN_CURRENCY_RE =
   /\b(CNY|USD|HKD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|MYR|THB|AED|SAR|KWD|QAR|TWD|NZD|ZAR)\b/i;
@@ -442,9 +443,10 @@ function parseGeminiRetryDelayMs(message) {
   return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 1000, GEMINI_MAX_RETRY_MS);
 }
 
-// 429 (quota) and 503 (overloaded) are transient — worth retrying after a delay.
+// 429 (quota), 503 (overloaded) and network glitches ("fetch failed") are
+// transient — worth retrying after a delay.
 function isRetryableGeminiError(message) {
-  return /RESOURCE_EXHAUSTED|UNAVAILABLE|429|503/.test(String(message));
+  return /RESOURCE_EXHAUSTED|UNAVAILABLE|429|503|fetch failed|ECONNRESET|ETIMEDOUT/i.test(String(message));
 }
 
 /**
@@ -736,7 +738,8 @@ app.post("/lta/scan", async (req, res) => {
       let mawbCurrency = null, fretValue = null;
       const logLines = [];
       const log = (msg) => {
-        console.log(msg);
+        // The front loads several LTAs in parallel → tag console lines with the ref
+        console.log(String(msg).replace("[mawb-extract]", `[mawb-extract ${trimmedRef}]`));
         logLines.push(msg);
       };
       if (mawbPdf) {
