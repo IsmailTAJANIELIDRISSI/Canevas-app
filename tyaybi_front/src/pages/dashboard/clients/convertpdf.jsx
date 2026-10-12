@@ -305,11 +305,11 @@ function extractColisAndPoidsBrut(text) {
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      // Remove the "Receiver Address" column (any case/spelling, leading/trailing spaces ignored)
-      // so the existing column indexes keep working whatever the template.
-      // Its values are kept per source row so the PDF can show them again.
+      // Remove the "Receiver Address" column (any case/spelling, leading/trailing spaces ignored,
+      // optional trailing number like "Receiver Address1") so the existing column indexes keep
+      // working whatever the template. Its values are kept per source row so the PDF can show them again.
       const isReceiverAddress = (cell) =>
-        typeof cell === 'string' && /^receiver\s*ad+res+e?$/i.test(cell.trim());
+        typeof cell === 'string' && /^receiver\s*ad+res+e?\s*\d*$/i.test(cell.trim());
 
       const receiverAddresses = {}; // source row index -> address
       const addrHeaderRow = jsonData.findIndex(

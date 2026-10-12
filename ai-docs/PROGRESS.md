@@ -4,6 +4,25 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 42 — Accept "Receiver Address1" header (Abdelhak's manifests)
+
+### Problem
+Some manifests name the address column "Receiver Address1": the detection regex
+`/^receiver\s*ad+res+e?$/i` rejected the trailing "1" → column not removed →
+validation BLOCKED (7 "attendu … trouvé « Receiver Address1 »" blockers, 0 data rows).
+
+### Solution
+Regex → `/^receiver\s*ad+res+e?\s*\d*$/i` (optional trailing number) in the 3 places:
+`validateManifest.js`, `sliceManifest.js`, Excelslice `convertpdf.jsx`. Output label
+stays "Receiver Address" (converter.js only sees that label → unchanged).
+
+### Verification (real validate + slice bundled with esbuild, Manifeste 607-55998445 newFormat)
+Header G5 renamed "Receiver Address1": HEAD → BLOCKED, 7 blockers, 12 sheets, no address;
+fixed → PASS, 17 sheets, output identical to the original-header file (264 713 cells).
+Original-header file: fixed output identical to HEAD.
+
+---
+
 ## Session 41 — Gemini order: 3.1-flash-lite → 3.6-flash → 3.8-flash
 
 ### Request

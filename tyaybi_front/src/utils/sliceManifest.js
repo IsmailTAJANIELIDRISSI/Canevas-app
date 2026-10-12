@@ -28,10 +28,11 @@ function extractColisAndPoidsBrut(text) {
   return { coli: parseFloat(matches[0]), poidbr: parseFloat(matches[1]) };
 }
 
-// "Receiver Address" header cell, any case/spelling (Address, Addresse, Adresse…).
-// Same rule as the Excelslice page (clients/convertpdf.jsx).
+// "Receiver Address" header cell, any case/spelling (Address, Addresse, Adresse…),
+// with an optional trailing number ("Receiver Address1"). Output label is always
+// "Receiver Address". Same rule as validateManifest and the Excelslice page.
 function isReceiverAddress(cell) {
-  return typeof cell === 'string' && /^receiver\s*ad+res+e?$/i.test(cell.trim());
+  return typeof cell === 'string' && /^receiver\s*ad+res+e?\s*\d*$/i.test(cell.trim());
 }
 
 /**

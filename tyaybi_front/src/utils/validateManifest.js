@@ -159,7 +159,7 @@ export function validateManifest(arrayBuffer, filename = 'manifest.xlsx') {
   // file this validator accepts is always sliced with the same columns.
   // phys() maps a column back to its real spreadsheet position (cell refs).
   const addrIdx = (jsonData[headerIdx] || [])
-    .findIndex((c) => typeof c === 'string' && /^receiver\s*ad+res+e?$/i.test(c.trim()));
+    .findIndex((c) => typeof c === 'string' && /^receiver\s*ad+res+e?\s*\d*$/i.test(c.trim())); // also "Receiver Address1"
   if (addrIdx >= 0) {
     for (let i = headerIdx; i < jsonData.length; i++) {
       if (Array.isArray(jsonData[i]) && jsonData[i].length > addrIdx) jsonData[i].splice(addrIdx, 1);
