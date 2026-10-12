@@ -4,6 +4,19 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 41 — Gemini order: 3.1-flash-lite → 3.6-flash → 3.8-flash
+
+### Request
+Google deprecated gemini-3.5-flash (auto-redirected to gemini-3.6-flash, "call 3.6
+directly"). New order: 3.1 first, then 3.6-flash, then 3.8-flash (2.5-flash dropped).
+
+### Verification
+Models API: all listed. 3.6-flash on the 3 Desktop MAWBs → MYR 31720.00 / 30576.00 /
+28080.00 (same as every other model) but slow today: 134–157 s per PDF in the bench,
+3.4 s or 503 "high demand" in a direct test. 3.1-flash-lite stays first (≈ 2 s).
+
+---
+
 ## Session 40 — Office PC: every Gemini / rate call fails with "fetch failed"
 
 ### Problem

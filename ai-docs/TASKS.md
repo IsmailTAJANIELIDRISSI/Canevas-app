@@ -1,5 +1,7 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Gemini order 3.1-flash-lite → 3.6-flash → 3.8-flash — DONE (Session 41)
+
 ## 🔶 tyaybi_app — Office PC "fetch failed" (Gemini + rates) — FIX APPLIED, TO CONFIRM (Session 40)
 
 - IPv4-first + happy-eyeballs off in the backend; real cause now logged.
