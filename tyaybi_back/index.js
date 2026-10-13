@@ -24,9 +24,10 @@ net.setDefaultAutoSelectFamily(false);
 function describeFetchError(e) {
   const c = e?.cause;
   if (!c) return e?.message ?? String(e);
-  const inner = Array.isArray(c.errors) && c.errors.length
-    ? c.errors.map((x) => `${x.code || x.name}: ${x.message}`).join(" | ")
-    : `${c.code || c.name}: ${c.message}`;
+  const inner =
+    Array.isArray(c.errors) && c.errors.length
+      ? c.errors.map((x) => `${x.code || x.name}: ${x.message}`).join(" | ")
+      : `${c.code || c.name}: ${c.message}`;
   return `${e.message} (cause: ${inner})`;
 }
 
@@ -408,7 +409,11 @@ app.get("/exchange-rate", async (req, res) => {
 
 // Fastest first (3.1-flash-lite ≈ 2 s); 3.6-flash (replaces the deprecated 3.5-flash) and
 // 3.8-flash are slower / often 503 "high demand" — fallbacks only. gemini-2.0-flash is retired (404).
-const GEMINI_MODEL_FALLBACKS = ["gemini-3.1-flash-lite-preview", "gemini-3.6-flash", "gemini-3.8-flash"];
+const GEMINI_MODEL_FALLBACKS = [
+  "gemini-3.1-flash-lite-preview",
+  "gemini-3.6-flash",
+  "gemini-3.8-flash",
+];
 
 const KNOWN_CURRENCY_RE =
   /\b(CNY|USD|HKD|EUR|GBP|JPY|CHF|SGD|AUD|CAD|MYR|THB|AED|SAR|KWD|QAR|TWD|NZD|ZAR)\b/i;
@@ -463,13 +468,18 @@ function parseGeminiRetryDelayMs(message) {
     String(message).match(/retryDelay["\s:]+(\d+(?:\.\d+)?)s/i) ||
     String(message).match(/retry in (\d+(?:\.\d+)?)s/i);
   if (!m) return null;
-  return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 1000, GEMINI_MAX_RETRY_MS);
+  return Math.min(
+    Math.ceil(parseFloat(m[1]) * 1000) + 1000,
+    GEMINI_MAX_RETRY_MS,
+  );
 }
 
 // 429 (quota), 503 (overloaded) and network glitches ("fetch failed") are
 // transient — worth retrying after a delay.
 function isRetryableGeminiError(message) {
-  return /RESOURCE_EXHAUSTED|UNAVAILABLE|429|503|fetch failed|ECONNRESET|ETIMEDOUT/i.test(String(message));
+  return /RESOURCE_EXHAUSTED|UNAVAILABLE|429|503|fetch failed|ECONNRESET|ETIMEDOUT/i.test(
+    String(message),
+  );
 }
 
 /**
@@ -491,7 +501,9 @@ async function supplementCurrencyFretViaVision(pdfBuffer, log = console.log) {
   try {
     genai = require("@google/genai");
   } catch {
-    log("[mawb-extract] @google/genai not installed — skipping vision fallback");
+    log(
+      "[mawb-extract] @google/genai not installed — skipping vision fallback",
+    );
     return { mawbCurrency: null, fretValue: null };
   }
 
@@ -500,7 +512,9 @@ async function supplementCurrencyFretViaVision(pdfBuffer, log = console.log) {
   // limit — skip it rather than burn quota on guaranteed failures.
   const MAX_PDF_BYTES = 4 * 1024 * 1024; // 4 MB
   if (pdfBuffer.length > MAX_PDF_BYTES) {
-    log(`[mawb-extract] PDF too large for vision (${(pdfBuffer.length / 1048576).toFixed(1)} MB > 4 MB) — skipping vision fallback`);
+    log(
+      `[mawb-extract] PDF too large for vision (${(pdfBuffer.length / 1048576).toFixed(1)} MB > 4 MB) — skipping vision fallback`,
+    );
     return { mawbCurrency: null, fretValue: null };
   }
 
@@ -522,13 +536,17 @@ Respond ONLY in this exact JSON (no markdown):
   for (const modelName of GEMINI_MODEL_FALLBACKS) {
     for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
       try {
-        log(`[mawb-extract] calling Gemini Vision (${modelName}), attempt ${attempt}/${GEMINI_MAX_ATTEMPTS}...`);
+        log(
+          `[mawb-extract] calling Gemini Vision (${modelName}), attempt ${attempt}/${GEMINI_MAX_ATTEMPTS}...`,
+        );
         const response = await client.models.generateContent({
           model: modelName,
           contents: [
             {
               parts: [
-                { inlineData: { mimeType: "application/pdf", data: pdfBase64 } },
+                {
+                  inlineData: { mimeType: "application/pdf", data: pdfBase64 },
+                },
                 { text: prompt },
               ],
             },
@@ -546,31 +564,49 @@ Respond ONLY in this exact JSON (no markdown):
         }
 
         responseText = responseText.trim();
-        log(`[mawb-extract] Gemini ${modelName} raw response: ${responseText.slice(0, 300)}`);
+        log(
+          `[mawb-extract] Gemini ${modelName} raw response: ${responseText.slice(0, 300)}`,
+        );
         if (responseText.startsWith("```")) {
           const start = responseText.indexOf("{");
           const end = responseText.lastIndexOf("}") + 1;
-          responseText = start !== -1 ? responseText.slice(start, end) : responseText;
+          responseText =
+            start !== -1 ? responseText.slice(start, end) : responseText;
         }
 
         const parsed = JSON.parse(responseText);
-        let fretValue = parsed.total_prepaid != null ? String(parsed.total_prepaid).replace(/,/g, "") : null;
+        let fretValue =
+          parsed.total_prepaid != null
+            ? String(parsed.total_prepaid).replace(/,/g, "")
+            : null;
         // Guard against Gemini dropping the decimal point (e.g. "57577000" instead of "575770.00")
         if (fretValue && /^\d+$/.test(fretValue) && fretValue.length >= 5) {
           fretValue = `${fretValue.slice(0, -2)}.${fretValue.slice(-2)}`;
         }
 
-        log(`[mawb-extract] Gemini ${modelName} parsed: currency=${parsed.currency ?? "null"} total_prepaid=${fretValue ?? "null"}`);
+        log(
+          `[mawb-extract] Gemini ${modelName} parsed: currency=${parsed.currency ?? "null"} total_prepaid=${fretValue ?? "null"}`,
+        );
         return {
           mawbCurrency: parsed.currency || null,
           fretValue: fretValue || null,
         };
       } catch (e) {
-        log(`[mawb-extract] Gemini ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed: ${describeFetchError(e)}`);
-        if (attempt < GEMINI_MAX_ATTEMPTS && isRetryableGeminiError(e.message)) {
+        log(
+          `[mawb-extract] Gemini ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed: ${describeFetchError(e)}`,
+        );
+        if (
+          attempt < GEMINI_MAX_ATTEMPTS &&
+          isRetryableGeminiError(e.message)
+        ) {
           // + random jitter (Gemini docs) so LTAs loading in parallel don't all retry at the same instant
-          const delayMs = (parseGeminiRetryDelayMs(e.message) ?? GEMINI_DEFAULT_RETRY_MS * attempt) + Math.floor(Math.random() * 1500);
-          log(`[mawb-extract] waiting ${Math.round(delayMs / 1000)}s before retrying ${modelName}...`);
+          const delayMs =
+            (parseGeminiRetryDelayMs(e.message) ??
+              GEMINI_DEFAULT_RETRY_MS * attempt) +
+            Math.floor(Math.random() * 1500);
+          log(
+            `[mawb-extract] waiting ${Math.round(delayMs / 1000)}s before retrying ${modelName}...`,
+          );
           await sleep(delayMs);
           continue;
         }
@@ -604,14 +640,20 @@ async function extractMawbMeta(pdfInput, log = console.log) {
     await parser.destroy();
     const text = String(result.text || "");
     const textLen = text.replace(/\s/g, "").length;
-    log(`[mawb-extract] pdf-parse extracted ${text.length} chars (${textLen} non-whitespace)`);
+    log(
+      `[mawb-extract] pdf-parse extracted ${text.length} chars (${textLen} non-whitespace)`,
+    );
 
     if (textLen < 50) {
       method = "scanned-pdf";
-      log("[mawb-extract] looks like a scanned PDF (< 50 non-whitespace chars)");
+      log(
+        "[mawb-extract] looks like a scanned PDF (< 50 non-whitespace chars)",
+      );
     } else {
       ({ mawbCurrency, fretValue } = extractMetaFromPdfText(text));
-      log(`[mawb-extract] regex result: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"}`);
+      log(
+        `[mawb-extract] regex result: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"}`,
+      );
     }
   } catch (e) {
     log(`[mawb-extract] extractMawbMeta error: ${e.message}`);
@@ -620,14 +662,18 @@ async function extractMawbMeta(pdfInput, log = console.log) {
 
   // Fall back to Gemini Vision if regex couldn't find one or both fields
   if (!mawbCurrency || !fretValue) {
-    log(`[mawb-extract] missing field(s) (currency=${mawbCurrency ?? "null"}, fret=${fretValue ?? "null"}) — trying Gemini Vision`);
+    log(
+      `[mawb-extract] missing field(s) (currency=${mawbCurrency ?? "null"}, fret=${fretValue ?? "null"}) — trying Gemini Vision`,
+    );
     const vision = await supplementCurrencyFretViaVision(buf, log);
     // Vision reads the actual Currency box; the regex only sees pdf-parse's
     // flattened text and can grab the wrong 3-letter code (e.g. AED before
     // the real HKD). So when Vision returns a currency, trust it over regex.
     if (vision.mawbCurrency) {
       if (mawbCurrency && mawbCurrency !== vision.mawbCurrency) {
-        log(`[mawb-extract] currency override: regex=${mawbCurrency} → vision=${vision.mawbCurrency}`);
+        log(
+          `[mawb-extract] currency override: regex=${mawbCurrency} → vision=${vision.mawbCurrency}`,
+        );
       }
       mawbCurrency = vision.mawbCurrency;
     }
@@ -637,7 +683,9 @@ async function extractMawbMeta(pdfInput, log = console.log) {
     }
   }
 
-  log(`[mawb-extract] final: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"} method=${method}`);
+  log(
+    `[mawb-extract] final: currency=${mawbCurrency ?? "null"} fret=${fretValue ?? "null"} method=${method}`,
+  );
   return { mawbCurrency, fretValue, method };
 }
 
@@ -676,14 +724,23 @@ app.post("/lta/scan", async (req, res) => {
     // or a suffix like " TEMU"). Case-insensitive, spaces ignored.
     // Searches partagePath directly first, then one level of subdirectories.
     const scanLog = [];
-    const slog = (m) => { console.log(m); scanLog.push(m); };
+    const slog = (m) => {
+      console.log(m);
+      scanLog.push(m);
+    };
 
     // Normalize: lowercase, drop spaces, and strip LEADING ZEROS from each digit
     // group so "157-00067174" and "157-0067174" (one zero fewer) match.
-    const norm = (s) => String(s).toLowerCase().replace(/\s+/g, "").replace(/\d+/g, (d) => d.replace(/^0+(?=\d)/, ""));
-    const refKey = norm(trimmedRef);      // "157-00067174" -> "157-67174"
-    const targetKey = `mawb${refKey}`;    // "mawb157-67174"
-    slog(`[scan] === LTA "${trimmedRef}" — targetKey="${targetKey}" refKey="${refKey}" (zéros de tête ignorés) ===`);
+    const norm = (s) =>
+      String(s)
+        .toLowerCase()
+        .replace(/\s+/g, "")
+        .replace(/\d+/g, (d) => d.replace(/^0+(?=\d)/, ""));
+    const refKey = norm(trimmedRef); // "157-00067174" -> "157-67174"
+    const targetKey = `mawb${refKey}`; // "mawb157-67174"
+    slog(
+      `[scan] === LTA "${trimmedRef}" — targetKey="${targetKey}" refKey="${refKey}" (zéros de tête ignorés) ===`,
+    );
     slog(`[scan] partagePath="${partagePath}"`);
 
     let folderPath = null;
@@ -691,7 +748,14 @@ app.post("/lta/scan", async (req, res) => {
       try {
         const entries = fs.readdirSync(searchPath, { withFileTypes: true });
         const dirs = entries.filter((e) => e.isDirectory());
-        slog(`[scan]   "${searchPath}" -> ${dirs.length} dossier(s): ${dirs.map((d) => d.name).slice(0, 40).join(" | ") || "(aucun)"}`);
+        slog(
+          `[scan]   "${searchPath}" -> ${dirs.length} dossier(s): ${
+            dirs
+              .map((d) => d.name)
+              .slice(0, 40)
+              .join(" | ") || "(aucun)"
+          }`,
+        );
         // 1. exact "MAWB {ref}" (zeros normalized)
         let match = dirs.find((e) => norm(e.name) === targetKey);
         // 2. fallback: normalized folder name contains the normalized ref
@@ -759,27 +823,40 @@ app.post("/lta/scan", async (req, res) => {
 
       // Extract currency + fret — ONLY from a real MAWB air waybill, never the
       // manifest (huge, and it doesn't contain the air-waybill totals anyway).
-      let mawbCurrency = null, fretValue = null;
+      let mawbCurrency = null,
+        fretValue = null;
       const logLines = [];
       const log = (msg) => {
         // The front loads several LTAs in parallel → tag console lines with the ref
-        console.log(String(msg).replace("[mawb-extract]", `[mawb-extract ${trimmedRef}]`));
+        console.log(
+          String(msg).replace("[mawb-extract]", `[mawb-extract ${trimmedRef}]`),
+        );
         logLines.push(msg);
       };
       if (mawbPdf) {
-        const extractB64 = fs.readFileSync(path.join(folderPath, mawbPdf)).toString("base64");
-        log(`[mawb-extract] === LTA ${trimmedRef} — extracting from "${mawbPdf}" ===`);
+        const extractB64 = fs
+          .readFileSync(path.join(folderPath, mawbPdf))
+          .toString("base64");
+        log(
+          `[mawb-extract] === LTA ${trimmedRef} — extracting from "${mawbPdf}" ===`,
+        );
         try {
           const meta = await extractMawbMeta(extractB64, log);
           mawbCurrency = meta.mawbCurrency;
           fretValue = meta.fretValue;
         } catch (e) {
-          log(`[mawb-extract] LTA ${trimmedRef} extraction threw: ${e.message}`);
+          log(
+            `[mawb-extract] LTA ${trimmedRef} extraction threw: ${e.message}`,
+          );
         }
       } else if (pdfFile) {
-        log(`[mawb-extract] === LTA ${trimmedRef} — only a manifest PDF ("${pdfFile}") found, no MAWB air waybill; skipping extraction (enter fret/devise manually) ===`);
+        log(
+          `[mawb-extract] === LTA ${trimmedRef} — only a manifest PDF ("${pdfFile}") found, no MAWB air waybill; skipping extraction (enter fret/devise manually) ===`,
+        );
       } else {
-        log(`[mawb-extract] === LTA ${trimmedRef} — no PDF found in folder ===`);
+        log(
+          `[mawb-extract] === LTA ${trimmedRef} — no PDF found in folder ===`,
+        );
       }
       appendLtaLog(trimmedRef, logLines);
 
@@ -815,11 +892,15 @@ app.post("/lta/scan", async (req, res) => {
       }
       const refMismatch = refMismatches.length > 0;
       if (refMismatch) {
-        const list = refMismatches.map((m) => `« ${m.file} » (réf ${m.fileRef})`).join(", ");
+        const list = refMismatches
+          .map((m) => `« ${m.file} » (réf ${m.fileRef})`)
+          .join(", ");
         warnings.push(
           `Référence incohérente : le dossier est « ${trimmedRef} » mais contient ${list}. Vérifiez que les bons fichiers sont dans le dossier avant de traiter.`,
         );
-        slog(`[scan] REF MISMATCH: dossier="${trimmedRef}" fichiers=${refMismatches.map((m) => m.fileRef).join(",")}`);
+        slog(
+          `[scan] REF MISMATCH: dossier="${trimmedRef}" fichiers=${refMismatches.map((m) => m.fileRef).join(",")}`,
+        );
         appendLtaLog(trimmedRef, scanLog);
       }
 
@@ -1130,15 +1211,18 @@ async function buildGeneratedExcelXL(sliceResult, ref) {
 // pages, Arabic font included.
 //   rows  : sheet rows (header, data…, totals) — totals row is not drawn
 //   test  : sliceResult.test (HS CODE mode) — drops the HAWB column like Excelslice
-const PDF_NAME_COL = 18;    // "Nom et Prénom"
-const PDF_HAWB_COL = 21;    // dropped from the PDF in HS CODE mode
+const PDF_NAME_COL = 18; // "Nom et Prénom"
+const PDF_HAWB_COL = 21; // dropped from the PDF in HS CODE mode
 const PDF_ADDRESS_COL = 22; // "Receiver Address" (only in the newer manifest format)
 
 async function sheetRowsToPdf(rows, totalPrice, totalDDP, test = false) {
   const hasAddress = (rows[0] || []).length > PDF_ADDRESS_COL;
   const toPdfRow = (row) => {
-    const pdfRow = row.slice(0, PDF_ADDRESS_COL).filter((_, c) => !(test && c === PDF_HAWB_COL));
-    if (hasAddress) pdfRow.splice(PDF_NAME_COL + 1, 0, row[PDF_ADDRESS_COL] ?? "");
+    const pdfRow = row
+      .slice(0, PDF_ADDRESS_COL)
+      .filter((_, c) => !(test && c === PDF_HAWB_COL));
+    if (hasAddress)
+      pdfRow.splice(PDF_NAME_COL + 1, 0, row[PDF_ADDRESS_COL] ?? "");
     return pdfRow;
   };
 
@@ -1161,7 +1245,15 @@ async function sheetRowsToPdf(rows, totalPrice, totalDDP, test = false) {
 // ─── Generate all files for one LTA and write them to folderPath ──────────────
 // Body: { sliceResult, ref, folderPath }
 app.post("/lta/generate-and-save", async (req, res) => {
-  const { sliceResult, ref, folderPath, manifestSrcPath, manifestName, pdfSrcPath, pdfName } = req.body;
+  const {
+    sliceResult,
+    ref,
+    folderPath,
+    manifestSrcPath,
+    manifestName,
+    pdfSrcPath,
+    pdfName,
+  } = req.body;
   if (!sliceResult || !ref || !folderPath) {
     return res
       .status(400)
@@ -1289,18 +1381,25 @@ app.post("/lta/generate-and-save", async (req, res) => {
 });
 
 // ─── Open Outlook draft — reads already-saved files from the output folder ──
-const EMAIL_TO = "OUSSAMA.FARIS@medafrica-log.com; imad.amoudi@medafrica-log.com; nouhaila.elallali@medafrica-log.com; nouhaila.orfane@medafrica-log.com; hamza.kninis@medafrica-log.com";
+const EMAIL_TO =
+  "OUSSAMA.FARIS@medafrica-log.com; imad.amoudi@medafrica-log.com; nouhaila.elallali@medafrica-log.com; nouhaila.orfane@medafrica-log.com; hamza.kninis@medafrica-log.com; ismail.tajani@medafrica-log.com";
 const { exec } = require("child_process");
 
 app.post("/lta/open-email-draft", (req, res) => {
   const { ref, savedFolderPath } = req.body;
   if (!ref || !savedFolderPath) {
-    return res.status(400).json({ error: "ref and savedFolderPath are required" });
+    return res
+      .status(400)
+      .json({ error: "ref and savedFolderPath are required" });
   }
 
   // Verify folder exists before unlocking the button
   if (!fs.existsSync(savedFolderPath)) {
-    return res.status(400).json({ error: `Dossier introuvable: ${savedFolderPath}. Sauvegardez d'abord les fichiers.` });
+    return res
+      .status(400)
+      .json({
+        error: `Dossier introuvable: ${savedFolderPath}. Sauvegardez d'abord les fichiers.`,
+      });
   }
 
   // Respond immediately so the button unlocks right away
@@ -1314,14 +1413,20 @@ app.post("/lta/open-email-draft", (req, res) => {
       // a failed Attachments.Add can destabilize the draft (Display crash).
       const attachments = fs
         .readdirSync(savedFolderPath, { withFileTypes: true })
-        .filter((e) => e.isFile() && !/^~/.test(e.name) && !e.name.startsWith("."))
+        .filter(
+          (e) => e.isFile() && !/^~/.test(e.name) && !e.name.startsWith("."),
+        )
         .map((e) => path.join(savedFolderPath, e.name));
 
       if (!attachments.length) {
-        console.error(`[email-draft] no attachments found in ${savedFolderPath}`);
+        console.error(
+          `[email-draft] no attachments found in ${savedFolderPath}`,
+        );
         return;
       }
-      console.log(`[email-draft] attaching ${attachments.length} file(s) for MAWB ${ref}`);
+      console.log(
+        `[email-draft] attaching ${attachments.length} file(s) for MAWB ${ref}`,
+      );
 
       const attachLines = attachments
         .map((p) => {
@@ -1331,8 +1436,8 @@ app.post("/lta/open-email-draft", (req, res) => {
         .join("\n");
 
       // Ref variants to search the mailbox with: with and without leading zero
-      const refZero = ref;                       // e.g. 072-74366504
-      const refNoZero = ref.replace(/^0+/, "");  // e.g. 72-74366504
+      const refZero = ref; // e.g. 072-74366504
+      const refNoZero = ref.replace(/^0+/, ""); // e.g. 72-74366504
 
       const psScript = [
         `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`,
@@ -1411,21 +1516,38 @@ app.post("/lta/open-email-draft", (req, res) => {
         `}`,
       ].join("\n");
 
-      const scriptPath = path.join(os.tmpdir(), `open_draft_${ref}_${Date.now()}.ps1`);
+      const scriptPath = path.join(
+        os.tmpdir(),
+        `open_draft_${ref}_${Date.now()}.ps1`,
+      );
       // UTF-8 BOM: Windows PowerShell 5.1 reads BOM-less files as ANSI (cp1252),
       // which mangles any non-ASCII (accented paths, em-dashes) and breaks parsing.
-      fs.writeFileSync(scriptPath, String.fromCharCode(0xFEFF) + psScript, "utf8");
+      fs.writeFileSync(
+        scriptPath,
+        String.fromCharCode(0xfeff) + psScript,
+        "utf8",
+      );
 
-      exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, (err, stdout, stderr) => {
-        const out = [];
-        if (stdout && stdout.trim()) out.push(stdout.trim());
-        if (stderr && stderr.trim()) out.push("[stderr] " + stderr.trim());
-        if (err) out.push("[exec error] " + err.message);
-        const text = out.join("\n");
-        if (text) console.log(text);
-        appendLtaLog(ref, [`[email-draft] === LTA ${ref} — open draft ===`, text || "(no PowerShell output)"]);
-        setTimeout(() => { try { fs.unlinkSync(scriptPath); } catch {} }, 15000);
-      });
+      exec(
+        `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`,
+        (err, stdout, stderr) => {
+          const out = [];
+          if (stdout && stdout.trim()) out.push(stdout.trim());
+          if (stderr && stderr.trim()) out.push("[stderr] " + stderr.trim());
+          if (err) out.push("[exec error] " + err.message);
+          const text = out.join("\n");
+          if (text) console.log(text);
+          appendLtaLog(ref, [
+            `[email-draft] === LTA ${ref} — open draft ===`,
+            text || "(no PowerShell output)",
+          ]);
+          setTimeout(() => {
+            try {
+              fs.unlinkSync(scriptPath);
+            } catch {}
+          }, 15000);
+        },
+      );
     } catch (e) {
       console.error("[email-draft] error:", e.message);
     }
