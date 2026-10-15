@@ -1,5 +1,9 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Acheminements = Excelslice: missing-NGP block, 495 split, audit — DONE (Session 43)
+
+- 🔶 Decide: block lines resolved by bddngp too (strict Excelslice behaviour) or not (current rule).
+
 ## ✅ tyaybi_app — Accept "Receiver Address1" header — DONE (Session 42)
 
 ## ✅ tyaybi_app — Gemini order 3.1-flash-lite → 3.6-flash → 3.8-flash — DONE (Session 41)

@@ -4,6 +4,42 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 43 — Acheminements vs Excelslice gaps (original developer's 2 fixes + audit)
+
+### Applied (from NGP_MISSING_FIX.md and SPLIT_495_FIX.md)
+- `sliceManifest.js`: `SPLIT_NGPS.has(Number(ngpCode))` — an NGP stored as text
+  ("6203120000") was never split into 495 + electronic parts (Excelslice uses `==`).
+- `acheminements/index.jsx`: a slice with `missingNGP` → card `error`, `sliceResult: null`
+  (no download/save/email possible), list + "Télécharger les NGP manquants"
+  (`missing_ngp_codes_<ref>.xlsx`) + "Relancer le découpage" (re-slice after adding codes).
+- `index.js` `/lta/generate-and-save`: safety net (SSE `error`, no folder) when
+  `missingNGP` is non-empty or a DUM row still has `"ngp"` in column 5.
+
+### Audit (line-by-line vs convertpdf.jsx) — extra parity fixes
+- Front `summary_file.xlsx` labels → Excelslice's ("Total Pieces", "Total freight",
+  "total position"); backend already had them.
+- `generated_excel` C1 → MAWB from manifest A1 (`mawbValue.split(' ',2)[1]`), typed ref
+  as fallback (front + back), like Excelslice.
+- Backend `generated_excel`: border on each DUM comment box (was missing).
+
+### Verification
+Real Excelslice slicing code (reader.onload body extracted from convertpdf.jsx, setters
+stubbed) vs sliceManifest: 4 real manifests + 1 exclusion case → identical (~1.4 M cells);
+crafted NGP-column manifest: old slicer left a text-NGP 800 MAD line unsplit, fixed = Excelslice.
+Backend on port 3999: missingNGP / "ngp" row → error event, no folder; normal → 34 files.
+
+### Known differences left (reported to the user)
+- Excelslice lists a description as missing as soon as the HS code/NGP column fails —
+  BEFORE the bddngp fallback — so it also blocks lines bddngp resolves. The developer's
+  rule (implemented) only blocks when bddngp fails too.
+- Excelslice bugs not copied: currency cell with spaces stops its loop (no trim);
+  crash if the first sorted row is an electronic-parts row; Connote/Docket next-row
+  fallback reads the wrong column (never reaches DUM files: those cases are blocked).
+- Not ported: Excelslice "Download Sliced Excel" (`sliced_file.xlsx`, all sheets +
+  Summary in one workbook).
+
+---
+
 ## Session 42 — Accept "Receiver Address1" header (Abdelhak's manifests)
 
 ### Problem

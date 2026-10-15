@@ -85,7 +85,8 @@ function buildSummaryData(sliceResult) {
   const totalPoidNet = sheets[0].totals.weight;
   const totalValeur  = sheets[0].totals.value;
 
-  const summaryData = [['Sheet Name', 'Total Quantite', 'Total Value', 'Total poid net', 'Total poid brute', 'Total fret', 'Total position', 'Assurance', 'Carton']];
+  // Same labels as Excelslice's summary_file.xlsx (handleDownloadSummaryOnly) and the backend
+  const summaryData = [['Sheet Name', 'Total Pieces', 'Total Value', 'Total poid net', 'Total poid brute', 'Total freight', 'total position', 'Assurance', 'Carton']];
 
   sheets.forEach((sheet, index) => {
     const uniqueCartons = new Set();
@@ -183,9 +184,10 @@ async function buildGeneratedExcel(sliceResult, ref) {
   const leftMap  = { P: 6, V: 2, 'P,NET': 3, 'P,BRUT': 4 };
   const rightMap = { Fret: 5, Ass: 7, 'N, COLIS': 8 };
 
-  // Global section — C1 shows the MAWB reference number
+  // Global section — C1 shows the MAWB number, taken from the manifest's A1
+  // ("MAWB 607-55998445" → "607-55998445") like Excelslice; typed ref as fallback
   worksheet.mergeCells('C1');
-  worksheet.getCell('C1').value = ref || '';
+  worksheet.getCell('C1').value = String(sliceResult.mawbValue ?? '').split(' ', 2)[1] || ref || '';
   worksheet.getCell('C1').border = border;
   worksheet.getCell('C1').font = { bold: true };
   leftLabels.forEach((lbl, i) => {
@@ -364,6 +366,16 @@ async function downloadSummaryOnly(sliceResult) {
   saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'summary_file.xlsx');
 }
 
+// Same file as Excelslice's "Download Missing NGP Codes": one description per row
+async function downloadMissingNGP(descriptions, ref) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Missing NGP Codes');
+  descriptions.forEach(description => worksheet.addRow([description]));
+  worksheet.getColumn(1).width = Math.max(20, ...descriptions.map(d => String(d ?? '').length));
+  const buf = await workbook.xlsx.writeBuffer();
+  saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `missing_ngp_codes_${ref}.xlsx`);
+}
+
 // ─── exchange rate ────────────────────────────────────────────────────────────
 
 // `attempts` > 1 retries transient failures (rate providers / network glitches)
@@ -446,6 +458,7 @@ function makeCard(ref) {
     rateFetching: false,
     madValue: null,
     sliceResult: null,
+    missingNGP: [],         // descriptions still without NGP after the bddngp fallback
     error: null,
     warning: null,
     manifestMissing: false,
@@ -702,7 +715,20 @@ export default function Acheminements() {
         : [];
       const tauxusdOverride = card.blocage && card.blocageUsdRate ? parseFloat(card.blocageUsdRate) : null;
       const sliceResult = sliceManifest(bytes.buffer, card.madValue, exclusionWaybills, tauxusdOverride);
-      updateCard(card.ref, { status: 'done', sliceResult });
+
+      // Same rule as Excelslice: a line still without NGP blocks generation.
+      // No sliceResult is kept, so none of the download/save/email buttons can run.
+      const missingNGP = [...new Set(sliceResult.missingNGP)];
+      if (missingNGP.length > 0) {
+        updateCard(card.ref, {
+          status: 'error',
+          sliceResult: null,
+          missingNGP,
+          error: `${missingNGP.length} NGP manquant(s) — génération bloquée. Ajoutez-les dans "Gestion de BDD" puis relancez.`,
+        });
+        return;
+      }
+      updateCard(card.ref, { status: 'done', sliceResult, missingNGP: [] });
     } catch (err) {
       updateCard(card.ref, { status: 'error', error: err.message });
     }
@@ -1045,7 +1071,7 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
 
   // Why this LTA should be reimported (null → no "Réimporter" button)
   let reimportReason = null;
-  if (card.status === 'error') {
+  if (card.status === 'error' && !card.missingNGP?.length) { // missing NGP → "Relancer le découpage" instead
     reimportReason = 'Corrigez le dossier si besoin, puis réimportez cette LTA.';
   } else if (card.status === 'ready' && !card.rateFetching) {
     if (!card.fret) reimportReason = "Fret non récupéré depuis le MAWB — saisissez-le ou réimportez cette LTA.";
@@ -1067,6 +1093,27 @@ function LtaCard({ card, onFretChange, onCurrencyChange, onExecute, onBlocageCha
         {card.status === 'error' && (
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 border border-red-200">
             {card.error}
+            {card.missingNGP?.length > 0 && (
+              <div className="mt-2 flex flex-col gap-2">
+                <ul className="list-disc pl-5 max-h-32 overflow-y-auto">
+                  {card.missingNGP.map((d, i) => <li key={i}>{d || '(description vide)'}</li>)}
+                </ul>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    color="red"
+                    variant="outlined"
+                    onClick={() => downloadMissingNGP(card.missingNGP, card.ref)}
+                  >
+                    Télécharger les NGP manquants
+                  </Button>
+                  {/* After adding the codes in "Gestion de BDD": slice again without a full reimport */}
+                  <Button size="sm" color="green" variant="outlined" onClick={onExecute}>
+                    Relancer le découpage
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

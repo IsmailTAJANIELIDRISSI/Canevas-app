@@ -369,7 +369,9 @@ export function sliceManifest(arrayBuffer, madValueOverride, exclusionWaybills =
         '', '', ...trailFields,
       ];
 
-      if (SPLIT_NGPS.has(ngpCode) && total > 500) {
+      // Number(): an NGP column can hold the code as text ("6203120000"); Excelslice
+      // compares with == so it splits both. Number('ngp') is NaN → never split.
+      if (SPLIT_NGPS.has(Number(ngpCode)) && total > 500) {
         const weightPercentage = (495 / total) * weight;
         let piecesPercentage = Math.round((495 / total) * pieces);
         const remainingTotal = total - 495;

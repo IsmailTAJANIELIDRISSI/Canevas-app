@@ -1118,8 +1118,10 @@ async function buildGeneratedExcelXL(sliceResult, ref) {
   const leftMap = { P: 6, V: 2, "P,NET": 3, "P,BRUT": 4 };
   const rightMap = { Fret: 5, Ass: 7, "N, COLIS": 8 };
 
+  // C1 = MAWB number from the manifest's A1 ("MAWB 607-55998445" → "607-55998445"), like Excelslice
   worksheet.mergeCells("C1");
-  worksheet.getCell("C1").value = ref || "";
+  worksheet.getCell("C1").value =
+    String(sliceResult.mawbValue ?? "").split(" ", 2)[1] || ref || "";
   worksheet.getCell("C1").border = border;
   worksheet.getCell("C1").font = { bold: true };
 
@@ -1192,6 +1194,7 @@ async function buildGeneratedExcelXL(sliceResult, ref) {
       };
     });
     worksheet.mergeCells(`C${rowStart + 1}:C${rowStart + 4}`);
+    worksheet.getCell(`C${rowStart + 2}`).border = border; // comment box, like Excelslice
     addSep(rowStart + 6);
   });
 
@@ -1266,6 +1269,20 @@ app.post("/lta/generate-and-save", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  // Safety net: never write a DUM that still has the "ngp" placeholder as NGP code
+  // (column 5 of the sheet rows; header row and totals row skipped)
+  const missingNGP = sliceResult.missingNGP || [];
+  const ngpLeft = sliceResult.sheets.some((s) =>
+    s.data.slice(1, -1).some((row) => row[5] === "ngp"),
+  );
+  if (missingNGP.length > 0 || ngpLeft) {
+    send({
+      type: "error",
+      message: `NGP manquant(s) — génération refusée (${[...new Set(missingNGP)].length || "codes 'ngp' dans les DUM"}).`,
+    });
+    return res.end();
+  }
 
   try {
     fs.mkdirSync(folderPath, { recursive: true });
