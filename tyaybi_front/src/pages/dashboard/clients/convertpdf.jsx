@@ -175,7 +175,8 @@ function extractColisAndPoidsBrut(text) {
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      const waybills = jsonData.slice(0).map(row => row[0]);
+      // As text: the manifest waybill is compared as a string, so a number cell (1002) must become "1002"
+      const waybills = jsonData.slice(0).map(row => row[0] != null ? String(row[0]).trim() : row[0]);
       console.log(waybills)
       setExclusionWaybills(waybills);
       setExcexiste(true);

@@ -4,6 +4,21 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 44 — Developer docs: EXCLUSION_FIX + ACHEMINEMENTS_PDF_FIX
+
+- EXCLUSION_FIX applied (Excelslice `convertpdf.jsx` handleExclusionFileChange): exclusion
+  waybills read as trimmed text — a number cell (1002) never matched the text waybill "1002".
+  Real Excelslice slicing code: before → not excluded (position 3); after → excluded
+  (position 2). Acheminements not affected (typed text).
+- ACHEMINEMENTS_PDF_FIX: already done in Session 36 (doc written against an older codebase
+  with `removeReceiverAddress.js`, absent here). sheetRowsToPdf uses converter.js, drops
+  HAWB only in HS CODE mode, puts the address after "Nom et Prénom" (detected from the
+  header length instead of a receiverAddressCol flag — same result). Doc test table re-run,
+  Acheminements vs Excelslice PDF: normal 800 wide + HAWB; address 890 wide; HS CODE +
+  address 840 wide, no HAWB; Arabic rendered — identical text / pages / width.
+
+---
+
 ## Session 43 — Acheminements vs Excelslice gaps (original developer's 2 fixes + audit)
 
 ### Applied (from NGP_MISSING_FIX.md and SPLIT_495_FIX.md)
