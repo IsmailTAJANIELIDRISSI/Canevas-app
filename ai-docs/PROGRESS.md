@@ -4,6 +4,18 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 45 — Gemini order from the multi-model benchmark
+
+`GEMINI_MODEL_FALLBACKS` = 3.1-flash-lite-preview → 3.1-flash-lite → 3.5-flash-lite →
+3-flash-preview → 3.6-flash → 3.5-flash (the user's benchmark "PDF / screenshot / shipper
+reading" order). Dropped 3.8-flash (503/504 on every call in that benchmark).
+Check on tyaybi's own key, 3 Desktop MAWBs, real extraction function: all 6 listed and
+all 6 correct on all 3 PDFs (MYR 31720.00 / 30576.00 / 28080.00). Latency today:
+3.1-preview 7–154 s (1 failure), 3.1-lite 1–14 s, 3.5-lite 1–3 s, 3-flash-preview 3–5 s,
+3.6-flash 5–27 s, 3.5-flash 12–39 s.
+
+---
+
 ## Session 44 — Developer docs: EXCLUSION_FIX + ACHEMINEMENTS_PDF_FIX
 
 - EXCLUSION_FIX applied (Excelslice `convertpdf.jsx` handleExclusionFileChange): exclusion

@@ -407,12 +407,16 @@ app.get("/exchange-rate", async (req, res) => {
 
 // ─── MAWB PDF Metadata Extraction ─────────────────────────────────────────────
 
-// Fastest first (3.1-flash-lite ≈ 2 s); 3.6-flash (replaces the deprecated 3.5-flash) and
-// 3.8-flash are slower / often 503 "high demand" — fallbacks only. gemini-2.0-flash is retired (404).
+// Order from the benchmark on real work (PDF / screenshot / shipper reading): every model
+// that answered was 100% correct. Left out: 3.8-flash, 3.7-flash, flash-latest (503/504 on
+// every call), the 2.5 models (404) and 3.1-pro (no free quota). gemini-2.0-flash is retired.
 const GEMINI_MODEL_FALLBACKS = [
   "gemini-3.1-flash-lite-preview",
+  "gemini-3.1-flash-lite",
+  "gemini-3.5-flash-lite",
+  "gemini-3-flash-preview",
   "gemini-3.6-flash",
-  "gemini-3.8-flash",
+  "gemini-3.5-flash",
 ];
 
 const KNOWN_CURRENCY_RE =
