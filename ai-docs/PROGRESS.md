@@ -4,6 +4,28 @@ _Populated as we work. Each entry = problem + solution + files changed._
 
 ---
 
+## Session 46 — Accept the Standard layout whose Receiver Name column is labelled "Phone"
+
+### Problem
+Manifeste 235-99339446 (Abdelhak): header `… Receiver City · Receiver Addresse · Contact ·
+Phone · Company · Phone · Weight …` — the Receiver Name column (index 7) is labelled "Phone",
+so "Phone" appears twice. Validator: BLOCKED, `Cellule I5 : attendu « Receiver Name »,
+trouvé « Phone »` (the address column is stripped first, so the cell ref is physical I).
+
+### Solution
+`validateManifest.js`: new schema `Standard (Receiver Name « Phone »)` (same `STD_COL` index
+map, same checks incl. phone length). Only the label differs — the slicer/Excelslice read
+columns by position, so no slicing change.
+
+### Verification (real validator + slicer, real Excelslice code)
+The failing file: BLOCKED → PASS (7 416 rows, no warning); sheets + totals identical to
+Excelslice (15 sheets); "Nom et Prénom" = the receiver's name, not a phone number.
+Regression over the 33 manifests modified since 1 Sept 2026: only that file changed status.
+Still blocked (not touched): 607-52812815 (header 76 pcs vs 70 distinct cartons — real data
+gap) and 235-96138696 (header spelled `hsCode`, no space — `normH` doesn't remove inner spaces).
+
+---
+
 ## Session 45 — Gemini order from the multi-model benchmark
 
 `GEMINI_MODEL_FALLBACKS` = 3.1-flash-lite-preview → 3.1-flash-lite → 3.5-flash-lite →

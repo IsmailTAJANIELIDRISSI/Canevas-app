@@ -55,6 +55,17 @@ const SCHEMAS = [
     checkPhone: false,
   },
   {
+    // Standard layout where the Receiver Name column is mislabelled "Phone"
+    // (so "Phone" appears twice: index 7 = the name, index 9 = the real phone).
+    name: 'Standard (Receiver Name « Phone »)',
+    headers: [
+      'Currency', 'Waybill Number', 'Description of Goods', 'Pieces', 'Value',
+      'Receiver City', 'Contact', 'Phone', 'Company', 'Phone', 'Weight',
+      'Carton or bag N°', 'hs Code',
+    ],
+    col: STD_COL,
+  },
+  {
     name: 'Connote',
     headers: [
       'Currency', 'Connote #', 'Sender Ref.', 'Piece Goods Descriptions', 'Piece', 'Value',

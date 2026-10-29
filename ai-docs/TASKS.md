@@ -1,5 +1,9 @@
 # TASKS.md — Current State and Next Steps
 
+## ✅ tyaybi_app — Accept layout "Receiver Name" labelled "Phone" — DONE (Session 46)
+
+- 🔶 Optional: accept `hsCode` (no space) — manifest 235-96138696 is blocked on it.
+
 ## ✅ tyaybi_app — Acheminements = Excelslice: missing-NGP block, 495 split, audit — DONE (Session 43)
 
 - 🔶 Decide: block lines resolved by bddngp too (strict Excelslice behaviour) or not (current rule).
